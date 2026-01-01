@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlx-lora-finetune-template"
+version = "0.1.0"
+authors = [
+  { name="Andrés Santos Sanz", email="andres@example.com" },
+]
+description = "A template for fine-tuning LLMs with LoRA and MLX on Apple Silicon"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "mlx>=0.21.0",
+    "mlx-lm>=0.21.0",
+    "huggingface_hub>=0.24.0",
+    "transformers>=4.40.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+    "datasets>=2.18.0",
+    "tqdm>=4.66.0",
+    "rich>=13.7.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/santos-sanz/mlx-lora-finetune-template"
+"Bug Tracker" = "https://github.com/santos-sanz/mlx-lora-finetune-template/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

@@ -1,0 +1,19 @@
+# Core MLX dependencies
+mlx>=0.21.0
+mlx-lm>=0.21.0
+
+# Hugging Face integration
+huggingface_hub>=0.24.0
+transformers>=4.40.0
+
+# Configuration and utilities
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Data processing
+datasets>=2.18.0
+numpy>=1.24.0
+
+# Progress and logging
+tqdm>=4.66.0
+rich>=13.7.0

@@ -1,0 +1,61 @@
+# Default configuration for MLX LoRA fine-tuning
+
+# Model configuration
+model:
+  name: "meta-llama/Llama-3.2-1B"  # Base model from Hugging Face
+  tokenizer: null  # Use model's tokenizer if null
+  max_seq_length: 2048
+
+# LoRA configuration
+lora:
+  rank: 8                    # LoRA rank (r)
+  alpha: 16                  # LoRA alpha for scaling
+  dropout: 0.05              # Dropout probability
+  target_modules:            # Layers to apply LoRA
+    - "q_proj"
+    - "v_proj"
+    - "k_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+# Training configuration
+training:
+  learning_rate: 1.0e-4
+  batch_size: 4
+  num_epochs: 3
+  gradient_accumulation_steps: 1
+  warmup_steps: 100
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  
+  # Checkpointing
+  save_steps: 500
+  save_total_limit: 3
+  
+  # Logging
+  logging_steps: 10
+  eval_steps: 100
+
+# Data configuration
+data:
+  train_file: "data/processed/train.jsonl"
+  valid_file: "data/processed/valid.jsonl"
+  prompt_template: |
+    <|begin_of_text|><|start_header_id|>user<|end_header_id|>
+    {instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+    {response}<|eot_id|>
+
+# Output configuration
+output:
+  dir: "outputs"
+  adapters_dir: "outputs/adapters"
+  checkpoints_dir: "outputs/checkpoints"
+  logs_dir: "outputs/logs"
+
+# Hugging Face configuration
+huggingface:
+  push_to_hub: false
+  repo_id: null              # Set via HF_REPO_ID env var
+  private: true
