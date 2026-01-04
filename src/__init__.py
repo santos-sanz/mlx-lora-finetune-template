@@ -7,11 +7,24 @@ A toolkit for fine-tuning LLM models using LoRA and MLX on Apple Silicon.
 __version__ = "0.1.0"
 __author__ = "Santos Sanz"
 
-from .config import LoRAConfig, TrainingConfig, ModelConfig, HuggingFaceConfig
+# Core modules (no MLX dependency)
+from .config import LoRAConfig, TrainingConfig, ModelConfig, HuggingFaceConfig, Config
 from .data_utils import load_dataset, prepare_training_data, create_train_val_split, save_jsonl
-from .hf_utils import download_model, upload_model, upload_checkpoint
-from .model_utils import load_base_model, apply_lora, fuse_lora, save_adapters
-from .trainer import LoRATrainer
+from .hf_utils import get_hf_token, upload_model, upload_checkpoint
+
+# MLX-dependent modules - import lazily to avoid errors when MLX not installed
+def __getattr__(name):
+    """Lazy import for MLX-dependent modules."""
+    if name in ("load_base_model", "apply_lora", "fuse_lora", "save_adapters"):
+        from . import model_utils
+        return getattr(model_utils, name)
+    elif name == "LoRATrainer":
+        from .trainer import LoRATrainer
+        return LoRATrainer
+    elif name == "download_model":
+        from .hf_utils import download_model
+        return download_model
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     # Config
@@ -19,20 +32,21 @@ __all__ = [
     "TrainingConfig", 
     "ModelConfig",
     "HuggingFaceConfig",
+    "Config",
     # Data utilities
     "load_dataset",
     "prepare_training_data",
     "create_train_val_split",
     "save_jsonl",
     # HuggingFace utilities
-    "download_model",
+    "get_hf_token",
     "upload_model",
     "upload_checkpoint",
-    # Model utilities
+    # Model utilities (lazy)
     "load_base_model",
     "apply_lora",
     "fuse_lora",
     "save_adapters",
-    # Trainer
+    # Trainer (lazy)
     "LoRATrainer",
 ]

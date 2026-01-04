@@ -17,3 +17,6 @@ numpy>=1.24.0
 # Progress and logging
 tqdm>=4.66.0
 rich>=13.7.0
+
+# UI
+streamlit>=1.30.0

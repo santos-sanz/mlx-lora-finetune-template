@@ -116,3 +116,698 @@ def convert_to_mlx_format(
     print(f"Saved {len(val_data)} validation examples to {val_path}")
     
     return train_path, val_path
+
+
+# ============================================================================
+# Text Preprocessing Utilities for Raw Content (Transcripts, Books, etc.)
+# ============================================================================
+
+import re
+
+
+def load_raw_text(path: Union[str, Path]) -> str:
+    """Load raw text from file (.txt, .md, etc.)."""
+    path = Path(path)
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def clean_text(
+    text: str,
+    remove_timestamps: bool = True,
+    normalize_whitespace: bool = True,
+    remove_urls: bool = False,
+    remove_speaker_labels: bool = False,
+    min_line_length: int = 0,
+) -> str:
+    """
+    Clean raw text content.
+    
+    Args:
+        text: Raw text to clean
+        remove_timestamps: Remove YouTube-style timestamps (00:00, 1:23:45, etc.)
+        normalize_whitespace: Collapse multiple spaces/newlines
+        remove_urls: Remove HTTP/HTTPS URLs
+        remove_speaker_labels: Remove patterns like "Speaker 1:", "[John]:", etc.
+        min_line_length: Remove lines shorter than this
+    
+    Returns:
+        Cleaned text
+    """
+    # Remove timestamps (various formats)
+    if remove_timestamps:
+        # YouTube format: 0:00, 00:00, 1:23:45
+        text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', text)
+        # Bracket format: [00:00], (1:23)
+        text = re.sub(r'[\[\(]\d{1,2}:\d{2}(?::\d{2})?[\]\)]', '', text)
+    
+    # Remove URLs
+    if remove_urls:
+        text = re.sub(r'https?://\S+', '', text)
+    
+    # Remove speaker labels
+    if remove_speaker_labels:
+        # Pattern: "Speaker 1:", "[John]:", "NARRATOR:", etc.
+        text = re.sub(r'^\s*[\[\(]?[A-Za-z0-9\s]+[\]\)]?\s*:\s*', '', text, flags=re.MULTILINE)
+    
+    # Filter short lines
+    if min_line_length > 0:
+        lines = text.split('\n')
+        lines = [l for l in lines if len(l.strip()) >= min_line_length]
+        text = '\n'.join(lines)
+    
+    # Normalize whitespace
+    if normalize_whitespace:
+        # Collapse multiple spaces
+        text = re.sub(r'[ \t]+', ' ', text)
+        # Collapse multiple newlines (keep max 2)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        # Strip leading/trailing whitespace from lines
+        text = '\n'.join(line.strip() for line in text.split('\n'))
+    
+    return text.strip()
+
+
+def chunk_text(
+    text: str,
+    chunk_size: int = 1000,
+    overlap: int = 100,
+    split_on: str = "paragraph",
+) -> List[str]:
+    """
+    Split long text into overlapping chunks.
+    
+    Args:
+        text: Text to chunk
+        chunk_size: Target size of each chunk in characters
+        overlap: Number of overlapping characters between chunks
+        split_on: How to split - "paragraph", "sentence", or "character"
+    
+    Returns:
+        List of text chunks
+    """
+    if not text.strip():
+        return []
+    
+    if split_on == "paragraph":
+        # Split on double newlines (paragraphs)
+        segments = re.split(r'\n\s*\n', text)
+    elif split_on == "sentence":
+        # Split on sentence boundaries
+        segments = re.split(r'(?<=[.!?])\s+', text)
+    else:
+        # Character-level chunking
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = min(start + chunk_size, len(text))
+            chunks.append(text[start:end])
+            start = end - overlap if end < len(text) else end
+        return chunks
+    
+    # Combine segments into chunks of target size
+    chunks = []
+    current_chunk = []
+    current_size = 0
+    
+    for segment in segments:
+        segment = segment.strip()
+        if not segment:
+            continue
+            
+        segment_size = len(segment)
+        
+        if current_size + segment_size <= chunk_size:
+            current_chunk.append(segment)
+            current_size += segment_size + 2  # +2 for paragraph separator
+        else:
+            if current_chunk:
+                chunks.append('\n\n'.join(current_chunk))
+            current_chunk = [segment]
+            current_size = segment_size
+    
+    if current_chunk:
+        chunks.append('\n\n'.join(current_chunk))
+    
+    # Add overlap by including end of previous chunk
+    if overlap > 0 and len(chunks) > 1:
+        overlapped_chunks = [chunks[0]]
+        for i in range(1, len(chunks)):
+            prev_end = chunks[i-1][-overlap:] if len(chunks[i-1]) > overlap else chunks[i-1]
+            overlapped_chunks.append(prev_end + "... " + chunks[i])
+        chunks = overlapped_chunks
+    
+    return chunks
+
+
+def create_completion_examples(
+    chunks: List[str],
+    context_ratio: float = 0.6,
+    min_response_length: int = 50,
+) -> List[Dict[str, str]]:
+    """
+    Create completion-style training examples from text chunks.
+    Given the first part of text, predict the continuation.
+    
+    Args:
+        chunks: List of text chunks
+        context_ratio: What fraction of chunk is context vs response
+        min_response_length: Minimum response length to include
+    
+    Returns:
+        List of training examples with 'text' field
+    """
+    examples = []
+    
+    for chunk in chunks:
+        if len(chunk) < min_response_length * 2:
+            continue
+            
+        split_point = int(len(chunk) * context_ratio)
+        context = chunk[:split_point].strip()
+        response = chunk[split_point:].strip()
+        
+        if len(response) < min_response_length:
+            continue
+        
+        # Format as instruction-response
+        text = f"### Instruction:\nContinue the following text:\n\n{context}\n\n### Response:\n{response}"
+        examples.append({"text": text})
+    
+    return examples
+
+
+def create_qa_examples(
+    chunks: List[str],
+    questions_per_chunk: int = 2,
+) -> List[Dict[str, str]]:
+    """
+    Create Q&A style training examples from text chunks.
+    Extracts key sentences and creates questions about them.
+    
+    Args:
+        chunks: List of text chunks
+        questions_per_chunk: Number of Q&A pairs per chunk
+    
+    Returns:
+        List of training examples
+    """
+    examples = []
+    
+    # Question templates
+    question_templates = [
+        ("What is the main topic discussed in this text?", "summary"),
+        ("What are the key points mentioned?", "keypoints"),
+        ("Explain the following concept based on the text:", "explain"),
+        ("Summarize the information about:", "summarize"),
+    ]
+    
+    for chunk in chunks:
+        if len(chunk) < 100:
+            continue
+        
+        # Create "explain this text" type questions
+        text = f"### Instruction:\nBased on the following text, answer the question.\n\nText: {chunk[:500]}...\n\nQuestion: What is the main topic discussed?\n\n### Response:\nThe text discusses {chunk[:200].split('.')[0].lower()}..."
+        examples.append({"text": text})
+        
+        # Create "summarize" question
+        if len(chunk) > 200:
+            summary = chunk[:150].rsplit(' ', 1)[0] + "..."
+            text = f"### Instruction:\nSummarize the following text in a few sentences:\n\n{chunk}\n\n### Response:\n{summary}"
+            examples.append({"text": text})
+    
+    return examples
+
+
+def create_knowledge_examples(
+    chunks: List[str],
+    topic: str = "the content",
+) -> List[Dict[str, str]]:
+    """
+    Create knowledge-style training examples.
+    Format: "Tell me about [topic]" -> content
+    
+    Args:
+        chunks: List of text chunks
+        topic: Topic descriptor for the content
+    
+    Returns:
+        List of training examples
+    """
+    examples = []
+    
+    prompts = [
+        f"Tell me about {topic}",
+        f"Explain {topic}",
+        f"What do you know about {topic}?",
+        f"Give me information about {topic}",
+        f"Describe {topic}",
+    ]
+    
+    for i, chunk in enumerate(chunks):
+        if len(chunk) < 100:
+            continue
+        
+        prompt = prompts[i % len(prompts)]
+        text = f"### Instruction:\n{prompt}\n\n### Response:\n{chunk}"
+        examples.append({"text": text})
+    
+    return examples
+
+
+def preprocess_raw_text(
+    text: str,
+    output_format: str = "completion",
+    chunk_size: int = 1000,
+    chunk_overlap: int = 100,
+    clean_timestamps: bool = True,
+    clean_urls: bool = False,
+    topic: str = "the content",
+) -> List[Dict[str, str]]:
+    """
+    Full preprocessing pipeline for raw text content.
+    
+    Args:
+        text: Raw text content
+        output_format: "completion", "qa", "knowledge", or "raw"
+        chunk_size: Target chunk size
+        chunk_overlap: Overlap between chunks
+        clean_timestamps: Remove timestamps
+        clean_urls: Remove URLs
+        topic: Topic for knowledge format
+    
+    Returns:
+        List of training examples ready for MLX format
+    """
+    # Clean the text
+    cleaned = clean_text(
+        text,
+        remove_timestamps=clean_timestamps,
+        remove_urls=clean_urls,
+        normalize_whitespace=True,
+    )
+    
+    # Chunk the text
+    chunks = chunk_text(cleaned, chunk_size=chunk_size, overlap=chunk_overlap)
+    
+    # Generate examples based on format
+    if output_format == "completion":
+        return create_completion_examples(chunks)
+    elif output_format == "qa":
+        return create_qa_examples(chunks)
+    elif output_format == "knowledge":
+        return create_knowledge_examples(chunks, topic=topic)
+    elif output_format == "raw":
+        # Just return chunks as-is for continued pretraining
+        return [{"text": chunk} for chunk in chunks]
+    else:
+        raise ValueError(f"Unknown output format: {output_format}")
+
+
+def process_raw_text_file(
+    input_path: Union[str, Path],
+    output_dir: Union[str, Path],
+    output_format: str = "completion",
+    val_ratio: float = 0.1,
+    chunk_size: int = 1000,
+    **kwargs,
+) -> Tuple[Path, Path]:
+    """
+    Process a raw text file and save as MLX training format.
+    
+    Args:
+        input_path: Path to raw text file
+        output_dir: Output directory
+        output_format: Training format type
+        val_ratio: Validation split ratio
+        chunk_size: Chunk size for splitting
+        **kwargs: Additional args for preprocess_raw_text
+    
+    Returns:
+        Tuple of (train_path, valid_path)
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Load text
+    text = load_raw_text(input_path)
+    
+    # Preprocess
+    examples = preprocess_raw_text(
+        text,
+        output_format=output_format,
+        chunk_size=chunk_size,
+        **kwargs,
+    )
+    
+    # Split
+    train_data, val_data = create_train_val_split(examples, val_ratio=val_ratio)
+    
+    # Save
+    train_path = output_dir / "train.jsonl"
+    val_path = output_dir / "valid.jsonl"
+    
+    save_jsonl(train_data, train_path)
+    save_jsonl(val_data, val_path)
+    
+    print(f"Processed {len(examples)} examples from raw text")
+    print(f"Saved {len(train_data)} training examples to {train_path}")
+    print(f"Saved {len(val_data)} validation examples to {val_path}")
+    
+    return train_path, val_path
+
+
+# ============================================================================
+# Folder Processing - Process Multiple Text Files
+# ============================================================================
+
+def process_folder(
+    input_folder: Union[str, Path],
+    output_dir: Union[str, Path],
+    file_extensions: List[str] = [".txt", ".md"],
+    output_format: str = "completion",
+    val_ratio: float = 0.1,
+    chunk_size: int = 1000,
+    clean_timestamps: bool = True,
+    clean_urls: bool = False,
+    topic: str = "the content",
+    progress_callback: callable = None,
+) -> Tuple[Path, Path]:
+    """
+    Process all text files in a folder into training data.
+    
+    Args:
+        input_folder: Folder containing text files
+        output_dir: Output directory for processed data
+        file_extensions: File extensions to process
+        output_format: Training format type
+        val_ratio: Validation split ratio
+        chunk_size: Chunk size for splitting
+        clean_timestamps: Remove timestamps
+        clean_urls: Remove URLs
+        topic: Topic for knowledge format
+        progress_callback: Optional callback(current, total, filename) for progress
+    
+    Returns:
+        Tuple of (train_path, valid_path)
+    """
+    input_folder = Path(input_folder)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Find all matching files
+    all_files = []
+    for ext in file_extensions:
+        all_files.extend(input_folder.glob(f"*{ext}"))
+        all_files.extend(input_folder.glob(f"**/*{ext}"))  # Recursive
+    
+    all_files = sorted(set(all_files))  # Remove duplicates and sort
+    
+    if not all_files:
+        raise ValueError(f"No files found with extensions {file_extensions} in {input_folder}")
+    
+    # Process each file
+    all_examples = []
+    
+    for i, file_path in enumerate(all_files):
+        if progress_callback:
+            progress_callback(i, len(all_files), file_path.name)
+        
+        try:
+            text = load_raw_text(file_path)
+            examples = preprocess_raw_text(
+                text,
+                output_format=output_format,
+                chunk_size=chunk_size,
+                chunk_overlap=100,
+                clean_timestamps=clean_timestamps,
+                clean_urls=clean_urls,
+                topic=topic,
+            )
+            all_examples.extend(examples)
+        except Exception as e:
+            print(f"Warning: Failed to process {file_path}: {e}")
+            continue
+    
+    if not all_examples:
+        raise ValueError("No examples generated from any files")
+    
+    # Shuffle all examples
+    random.shuffle(all_examples)
+    
+    # Split
+    train_data, val_data = create_train_val_split(all_examples, val_ratio=val_ratio)
+    
+    # Save
+    train_path = output_dir / "train.jsonl"
+    val_path = output_dir / "valid.jsonl"
+    
+    save_jsonl(train_data, train_path)
+    save_jsonl(val_data, val_path)
+    
+    print(f"Processed {len(all_files)} files → {len(all_examples)} examples")
+    print(f"Saved {len(train_data)} training examples to {train_path}")
+    print(f"Saved {len(val_data)} validation examples to {val_path}")
+    
+    return train_path, val_path
+
+
+# ============================================================================
+# LLM-Assisted Data Preparation
+# ============================================================================
+
+def load_helper_model(
+    model_name: str = "Qwen/Qwen3-0.6B",
+    device: str = "mps",
+):
+    """
+    Load a small helper model for intelligent data preparation.
+    
+    Args:
+        model_name: HuggingFace model ID
+        device: Device to load on (mps for Apple Silicon)
+    
+    Returns:
+        Tuple of (model, tokenizer)
+    """
+    try:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        import torch
+    except ImportError:
+        raise ImportError("transformers and torch required for LLM-assisted prep")
+    
+    print(f"Loading helper model: {model_name}...")
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16,
+        device_map=device,
+        trust_remote_code=True,
+    )
+    
+    return model, tokenizer
+
+
+def generate_with_model(
+    model,
+    tokenizer,
+    prompt: str,
+    max_new_tokens: int = 256,
+    temperature: float = 0.7,
+) -> str:
+    """Generate text using the helper model."""
+    import torch
+    
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+    
+    response = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+    return response.strip()
+
+
+def create_llm_qa_examples(
+    chunks: List[str],
+    model,
+    tokenizer,
+    questions_per_chunk: int = 2,
+    progress_callback: callable = None,
+) -> List[Dict[str, str]]:
+    """
+    Create Q&A training examples using an LLM to generate questions.
+    
+    Args:
+        chunks: List of text chunks
+        model: Loaded helper model
+        tokenizer: Model tokenizer
+        questions_per_chunk: Number of Q&A pairs per chunk
+        progress_callback: Optional callback(current, total) for progress
+    
+    Returns:
+        List of training examples
+    """
+    examples = []
+    
+    for i, chunk in enumerate(chunks):
+        if progress_callback:
+            progress_callback(i, len(chunks))
+        
+        if len(chunk) < 100:
+            continue
+        
+        # Truncate chunk for prompt
+        chunk_preview = chunk[:1500] if len(chunk) > 1500 else chunk
+        
+        # Generate questions
+        question_prompt = f"""Based on this text, generate {questions_per_chunk} insightful questions that can be answered from the text.
+
+Text:
+{chunk_preview}
+
+Questions (one per line):"""
+        
+        try:
+            questions_text = generate_with_model(model, tokenizer, question_prompt, max_new_tokens=150)
+            questions = [q.strip().lstrip("0123456789.-) ") for q in questions_text.split("\n") if q.strip()]
+            questions = questions[:questions_per_chunk]
+            
+            # Generate answer for each question
+            for question in questions:
+                if not question or len(question) < 10:
+                    continue
+                
+                answer_prompt = f"""Text:
+{chunk_preview}
+
+Question: {question}
+
+Answer based only on the text above:"""
+                
+                answer = generate_with_model(model, tokenizer, answer_prompt, max_new_tokens=200)
+                
+                if answer and len(answer) > 20:
+                    text = f"### Instruction:\n{question}\n\n### Response:\n{answer}"
+                    examples.append({"text": text})
+        
+        except Exception as e:
+            print(f"Warning: Failed to generate Q&A for chunk {i}: {e}")
+            continue
+    
+    return examples
+
+
+def create_llm_summary_examples(
+    chunks: List[str],
+    model,
+    tokenizer,
+    progress_callback: callable = None,
+) -> List[Dict[str, str]]:
+    """
+    Create summarization training examples using an LLM.
+    
+    Args:
+        chunks: List of text chunks
+        model: Loaded helper model
+        tokenizer: Model tokenizer
+        progress_callback: Optional callback(current, total) for progress
+    
+    Returns:
+        List of training examples
+    """
+    examples = []
+    
+    for i, chunk in enumerate(chunks):
+        if progress_callback:
+            progress_callback(i, len(chunks))
+        
+        if len(chunk) < 200:
+            continue
+        
+        chunk_preview = chunk[:2000] if len(chunk) > 2000 else chunk
+        
+        summary_prompt = f"""Summarize the following text in 2-3 concise sentences:
+
+Text:
+{chunk_preview}
+
+Summary:"""
+        
+        try:
+            summary = generate_with_model(model, tokenizer, summary_prompt, max_new_tokens=150)
+            
+            if summary and len(summary) > 30:
+                text = f"### Instruction:\nSummarize the following text:\n\n{chunk}\n\n### Response:\n{summary}"
+                examples.append({"text": text})
+        
+        except Exception as e:
+            print(f"Warning: Failed to generate summary for chunk {i}: {e}")
+            continue
+    
+    return examples
+
+
+def preprocess_with_llm(
+    text: str,
+    model,
+    tokenizer,
+    output_format: str = "qa",
+    chunk_size: int = 1000,
+    chunk_overlap: int = 100,
+    clean_timestamps: bool = True,
+    clean_urls: bool = False,
+    questions_per_chunk: int = 2,
+    progress_callback: callable = None,
+) -> List[Dict[str, str]]:
+    """
+    Full LLM-assisted preprocessing pipeline.
+    
+    Args:
+        text: Raw text content
+        model: Loaded helper model
+        tokenizer: Model tokenizer
+        output_format: "qa" or "summary"
+        chunk_size: Target chunk size
+        chunk_overlap: Overlap between chunks
+        clean_timestamps: Remove timestamps
+        clean_urls: Remove URLs
+        questions_per_chunk: Number of Q&A pairs per chunk (for qa format)
+        progress_callback: Optional callback for progress
+    
+    Returns:
+        List of training examples
+    """
+    # Clean the text
+    cleaned = clean_text(
+        text,
+        remove_timestamps=clean_timestamps,
+        remove_urls=clean_urls,
+        normalize_whitespace=True,
+    )
+    
+    # Chunk the text
+    chunks = chunk_text(cleaned, chunk_size=chunk_size, overlap=chunk_overlap)
+    
+    # Generate examples based on format
+    if output_format == "qa":
+        return create_llm_qa_examples(
+            chunks, model, tokenizer,
+            questions_per_chunk=questions_per_chunk,
+            progress_callback=progress_callback,
+        )
+    elif output_format == "summary":
+        return create_llm_summary_examples(
+            chunks, model, tokenizer,
+            progress_callback=progress_callback,
+        )
+    else:
+        raise ValueError(f"LLM format must be 'qa' or 'summary', got: {output_format}")
+
+
