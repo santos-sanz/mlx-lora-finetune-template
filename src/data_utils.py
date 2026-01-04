@@ -811,3 +811,365 @@ def preprocess_with_llm(
         raise ValueError(f"LLM format must be 'qa' or 'summary', got: {output_format}")
 
 
+# ============================================================================
+# Open Router API for Faster Data Generation
+# ============================================================================
+
+import os
+import requests
+
+def get_openrouter_config() -> Dict[str, str]:
+    """
+    Get Open Router configuration from environment variables.
+    
+    Returns:
+        Dict with api_key, api_url, and model
+    """
+    return {
+        "api_key": os.getenv("OPENROUTER_API_KEY", ""),
+        "api_url": os.getenv("OPENROUTER_API_URL", "https://openrouter.ai/api/v1"),
+        "model": os.getenv("OPENROUTER_MODEL", "qwen/qwen3-0.6b-04-28"),
+    }
+
+
+def is_openrouter_configured() -> bool:
+    """Check if Open Router API is properly configured."""
+    config = get_openrouter_config()
+    return bool(config["api_key"] and config["api_key"] != "sk-or-xxxxxxxxxxxxxxxxxxxxxxxx")
+
+
+def generate_with_openrouter(
+    prompt: str,
+    api_key: Optional[str] = None,
+    api_url: Optional[str] = None,
+    model: Optional[str] = None,
+    max_tokens: int = 256,
+    temperature: float = 0.7,
+) -> str:
+    """
+    Generate text using Open Router API.
+    
+    Args:
+        prompt: The prompt to send to the model
+        api_key: Open Router API key (uses env var if not provided)
+        api_url: Open Router API URL (uses env var if not provided)
+        model: Model to use (uses env var if not provided)
+        max_tokens: Maximum tokens to generate
+        temperature: Sampling temperature
+    
+    Returns:
+        Generated text response
+    """
+    config = get_openrouter_config()
+    api_key = api_key or config["api_key"]
+    api_url = api_url or config["api_url"]
+    model = model or config["model"]
+    
+    if not api_key:
+        raise ValueError("Open Router API key not configured. Set OPENROUTER_API_KEY in .env")
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/mlx-lora-finetune",
+        "X-Title": "MLX LoRA Fine-tuning",
+    }
+    
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    
+    response = requests.post(
+        f"{api_url}/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=60,
+    )
+    
+    if response.status_code != 200:
+        raise Exception(f"Open Router API error: {response.status_code} - {response.text}")
+    
+    result = response.json()
+    return result["choices"][0]["message"]["content"].strip()
+
+
+def _process_single_chunk_qa(args) -> List[Dict[str, str]]:
+    """Process a single chunk for Q&A - used by thread pool."""
+    chunk, api_key, model, questions_per_chunk = args
+    examples = []
+    
+    if len(chunk) < 100:
+        return examples
+    
+    chunk_preview = chunk[:1500] if len(chunk) > 1500 else chunk
+    
+    # Single prompt that generates complete Q&A pairs
+    prompt = f"""Based on this text, generate {questions_per_chunk} question-answer pairs.
+Format your response as a numbered list where each item has the question followed by the answer.
+
+Text:
+{chunk_preview}
+
+Generate {questions_per_chunk} Q&A pairs in this exact format:
+1. Q: [question]
+   A: [answer]
+2. Q: [question]
+   A: [answer]"""
+    
+    try:
+        response = generate_with_openrouter(
+            prompt, 
+            api_key=api_key, 
+            model=model, 
+            max_tokens=500
+        )
+        
+        # Parse the response to extract Q&A pairs
+        lines = response.split('\n')
+        current_q = None
+        current_a = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Check for question patterns
+            if line.startswith('Q:') or (line[0].isdigit() and 'Q:' in line):
+                # Save previous Q&A if exists
+                if current_q and current_a:
+                    answer = ' '.join(current_a).strip()
+                    if len(answer) > 20:
+                        text = f"### Instruction:\n{current_q}\n\n### Response:\n{answer}"
+                        examples.append({"text": text})
+                
+                # Extract new question
+                if 'Q:' in line:
+                    current_q = line.split('Q:', 1)[1].strip()
+                else:
+                    current_q = line.lstrip('0123456789.-) ').strip()
+                current_a = []
+            
+            elif line.startswith('A:') or (current_q and not line[0].isdigit()):
+                # Extract answer
+                if line.startswith('A:'):
+                    current_a.append(line.split('A:', 1)[1].strip())
+                elif current_q and current_a:  # Continue answer
+                    current_a.append(line)
+                elif current_q:  # First line of answer without A: prefix
+                    current_a.append(line)
+        
+        # Don't forget the last Q&A pair
+        if current_q and current_a:
+            answer = ' '.join(current_a).strip()
+            if len(answer) > 20:
+                text = f"### Instruction:\n{current_q}\n\n### Response:\n{answer}"
+                examples.append({"text": text})
+    
+    except Exception as e:
+        print(f"Warning: Failed to generate Q&A: {e}")
+    
+    return examples
+
+
+def create_openrouter_qa_examples(
+    chunks: List[str],
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    questions_per_chunk: int = 2,
+    progress_callback: callable = None,
+    max_workers: int = 10,
+) -> List[Dict[str, str]]:
+    """
+    Create Q&A training examples using Open Router API with parallel processing.
+    
+    Args:
+        chunks: List of text chunks
+        api_key: Open Router API key
+        model: Model to use
+        questions_per_chunk: Number of Q&A pairs per chunk
+        progress_callback: Optional callback(current, total) for progress
+        max_workers: Number of parallel workers (default 10)
+    
+    Returns:
+        List of training examples
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    examples = []
+    total = len(chunks)
+    
+    # Prepare arguments for each chunk
+    args_list = [(chunk, api_key, model, questions_per_chunk) for chunk in chunks]
+    
+    completed = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        futures = {executor.submit(_process_single_chunk_qa, args): i for i, args in enumerate(args_list)}
+        
+        # Collect results as they complete
+        for future in as_completed(futures):
+            completed += 1
+            if progress_callback:
+                # Pass completed-1 so callback receives 0 to total-1 range
+                progress_callback(completed - 1, total)
+            
+            try:
+                result = future.result()
+                examples.extend(result)
+            except Exception as e:
+                print(f"Warning: Chunk processing failed: {e}")
+    
+    return examples
+
+
+def _process_single_chunk_summary(args) -> Dict[str, str]:
+    """Process a single chunk for summary - used by thread pool."""
+    chunk, api_key, model = args
+    
+    if len(chunk) < 200:
+        return None
+    
+    chunk_preview = chunk[:2000] if len(chunk) > 2000 else chunk
+    
+    summary_prompt = f"""Summarize the following text in 2-3 concise sentences:
+
+Text:
+{chunk_preview}
+
+Summary:"""
+    
+    try:
+        summary = generate_with_openrouter(
+            summary_prompt, 
+            api_key=api_key, 
+            model=model, 
+            max_tokens=150
+        )
+        
+        if summary and len(summary) > 30:
+            text = f"### Instruction:\nSummarize the following text:\n\n{chunk}\n\n### Response:\n{summary}"
+            return {"text": text}
+    
+    except Exception as e:
+        print(f"Warning: Failed to generate summary: {e}")
+    
+    return None
+
+
+def create_openrouter_summary_examples(
+    chunks: List[str],
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    progress_callback: callable = None,
+    max_workers: int = 10,
+) -> List[Dict[str, str]]:
+    """
+    Create summarization training examples using Open Router API with parallel processing.
+    
+    Args:
+        chunks: List of text chunks
+        api_key: Open Router API key
+        model: Model to use
+        progress_callback: Optional callback(current, total) for progress
+        max_workers: Number of parallel workers (default 10)
+    
+    Returns:
+        List of training examples
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    examples = []
+    total = len(chunks)
+    
+    # Prepare arguments for each chunk
+    args_list = [(chunk, api_key, model) for chunk in chunks]
+    
+    completed = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        futures = {executor.submit(_process_single_chunk_summary, args): i for i, args in enumerate(args_list)}
+        
+        # Collect results as they complete
+        for future in as_completed(futures):
+            completed += 1
+            if progress_callback:
+                # Pass completed-1 so callback receives 0 to total-1 range
+                progress_callback(completed - 1, total)
+            
+            try:
+                result = future.result()
+                if result:
+                    examples.append(result)
+            except Exception as e:
+                print(f"Warning: Chunk processing failed: {e}")
+    
+    return examples
+
+
+
+def preprocess_with_openrouter(
+    text: str,
+    output_format: str = "qa",
+    chunk_size: int = 1000,
+    chunk_overlap: int = 100,
+    clean_timestamps: bool = True,
+    clean_urls: bool = False,
+    questions_per_chunk: int = 2,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    progress_callback: callable = None,
+) -> List[Dict[str, str]]:
+    """
+    Full Open Router preprocessing pipeline.
+    
+    Args:
+        text: Raw text content
+        output_format: "qa" or "summary"
+        chunk_size: Target chunk size
+        chunk_overlap: Overlap between chunks
+        clean_timestamps: Remove timestamps
+        clean_urls: Remove URLs
+        questions_per_chunk: Number of Q&A pairs per chunk (for qa format)
+        api_key: Open Router API key
+        model: Model to use
+        progress_callback: Optional callback for progress
+    
+    Returns:
+        List of training examples
+    """
+    # Clean the text
+    cleaned = clean_text(
+        text,
+        remove_timestamps=clean_timestamps,
+        remove_urls=clean_urls,
+        normalize_whitespace=True,
+    )
+    
+    # Chunk the text
+    chunks = chunk_text(cleaned, chunk_size=chunk_size, overlap=chunk_overlap)
+    
+    # Generate examples based on format
+    if output_format == "qa":
+        return create_openrouter_qa_examples(
+            chunks,
+            api_key=api_key,
+            model=model,
+            questions_per_chunk=questions_per_chunk,
+            progress_callback=progress_callback,
+        )
+    elif output_format == "summary":
+        return create_openrouter_summary_examples(
+            chunks,
+            api_key=api_key,
+            model=model,
+            progress_callback=progress_callback,
+        )
+    else:
+        raise ValueError(f"Open Router format must be 'qa' or 'summary', got: {output_format}")
+

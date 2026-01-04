@@ -130,393 +130,690 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Premium dark theme with high contrast
-st.markdown("""
+# Initialize theme in session state early
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'dark'
+
+def get_theme_css(theme: str = 'dark') -> str:
+    """Generate CSS based on theme selection."""
+    
+    if theme == 'light':
+        # Light mode colors
+        return """
 <style>
-    /* Import Google Font */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
     
-    * {
-        font-family: 'Inter', sans-serif;
-    }
+    * { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; }
+    code, pre, .stCodeBlock { font-family: 'JetBrains Mono', monospace !important; }
+
+    /* LIGHT MODE */
+    .stApp { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%); }
     
-    /* Main background - solid dark for contrast */
-    .stApp {
-        background: linear-gradient(160deg, #0a0a12 0%, #12121f 40%, #1a1a2e 70%, #12121f 100%);
-    }
-    
-    /* Sidebar styling */
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0d0d15 0%, #151520 100%);
-        border-right: 1px solid rgba(102, 126, 234, 0.3);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border-right: 1px solid rgba(255, 107, 107, 0.2);
+    }
+    
+    /* Collapsed sidebar - light mode */
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+    }
+    
+    /* Sidebar collapse button - light mode */
+    button[data-testid="stSidebarCollapseButton"],
+    button[data-testid="baseButton-headerNoPadding"] {
+        color: #FF6B6B !important;
+        background: rgba(255, 107, 107, 0.15) !important;
+        border-radius: 8px !important;
+    }
+    
+    /* FORCE VISIBILITY - Light mode collapsed sidebar */
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+        border-right: 2px solid rgba(255, 107, 107, 0.3) !important;
+        min-width: 3rem !important;
+        padding: 0.5rem !important;
+    }
+    
+    [data-testid="stSidebarCollapsedControl"] button,
+    [data-testid="collapsedControl"] button,
+    [data-testid="stSidebarNavCollapseIcon"],
+    button[kind="headerNoPadding"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        color: #FF6B6B !important;
+        background: rgba(255, 107, 107, 0.15) !important;
+        border-radius: 8px !important;
+        min-width: 2rem !important;
+        min-height: 2rem !important;
+    }
+    
+    [data-testid="stSidebarCollapsedControl"] svg,
+    [data-testid="collapsedControl"] svg {
+        fill: #FF6B6B !important;
+        stroke: #FF6B6B !important;
+        width: 1.5rem !important;
+        height: 1.5rem !important;
     }
     
     section[data-testid="stSidebar"] .stMarkdown h2 {
-        background: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
+        background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        font-weight: 800; font-size: 1.5rem;
+    }
+    
+    section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] span,
+    section[data-testid="stSidebar"] label { color: #1e293b !important; font-weight: 500 !important; }
+    
+    .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span,
+    .stMarkdown td, .stMarkdown th { color: #1e293b !important; }
+    .stMarkdown strong, .stMarkdown b { color: #0f172a !important; }
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 { color: #0f172a !important; }
+    
+    label, .stTextInput label, .stNumberInput label, .stSelectbox label, 
+    .stSlider label, .stCheckbox label, .stRadio label, .stMultiSelect label {
+        color: #0f172a !important; font-weight: 600 !important;
+    }
+    
+    .stCheckbox, .stCheckbox span, .stCheckbox label, .stCheckbox p,
+    [data-testid="stCheckbox"], [data-testid="stCheckbox"] span,
+    .stRadio, .stRadio span, .stRadio label, .stRadio p,
+    [data-testid="stRadio"], [data-testid="stRadio"] span {
+        color: #1e293b !important; -webkit-text-fill-color: #1e293b !important;
+    }
+    
+    .stCaption, [data-testid="stCaption"] { color: #64748b !important; }
+    
+    .streamlit-expanderHeader, .streamlit-expanderHeader p,
+    .streamlit-expanderContent, .streamlit-expanderContent p,
+    [data-testid="stExpander"] p, [data-testid="stExpander"] span { color: #1e293b !important; }
+
+    .stTabs [data-baseweb="tab-panel"] {
+        background: rgba(255, 255, 255, 0.9); border-radius: 16px;
+        border: 1px solid rgba(78, 205, 196, 0.2); padding: 24px;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        background: rgba(241, 245, 249, 0.95); border-radius: 12px; padding: 6px;
+    }
+    .stTabs [data-baseweb="tab"] { color: #64748b !important; font-weight: 600; }
+    .stTabs [data-baseweb="tab"]:hover { background: rgba(78, 205, 196, 0.15); color: #0f172a !important; }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%) !important;
+        color: #ffffff !important; box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
+    }
+
+    .stButton > button {
+        background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
+        color: white !important; border: none; border-radius: 10px;
+        padding: 12px 28px; font-weight: 700; box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
+    }
+    .stButton > button:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(255, 107, 107, 0.4); }
+
+    .stTextInput > div > div > input, .stNumberInput > div > div > input, .stTextArea > div > textarea {
+        background: #ffffff !important; border: 1.5px solid #cbd5e1 !important;
+        border-radius: 10px !important; color: #1e293b !important;
+    }
+    .stTextInput > div > div > input:focus, .stTextArea > div > textarea:focus {
+        border-color: #4ECDC4 !important; box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.2) !important;
+    }
+    .stSelectbox > div > div, .stMultiSelect > div > div {
+        background: #ffffff !important; border: 1.5px solid #cbd5e1 !important; color: #1e293b !important;
+    }
+
+    [data-testid="stMetric"] {
+        background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(78, 205, 196, 0.2);
+        border-radius: 14px; padding: 20px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    [data-testid="stMetricLabel"] { color: #64748b !important; }
+    [data-testid="stMetricValue"] { color: #0f172a !important; }
+
+    .main-title {
+        font-size: 2.8rem; font-weight: 800;
+        background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 40%, #e85d04 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .subtitle { color: #64748b !important; }
+    .section-header { color: #0f172a !important; }
+    .feature-card {
+        background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(78, 205, 196, 0.15);
+        border-radius: 16px; padding: 28px;
+    }
+    .feature-title { color: #0f172a !important; }
+    .feature-desc { color: #64748b !important; }
+
+    .stInfo { background: rgba(99, 179, 237, 0.1) !important; border: 1px solid rgba(99, 179, 237, 0.3) !important; color: #1e40af !important; }
+    .stSuccess { background: rgba(78, 205, 196, 0.1) !important; border: 1px solid rgba(78, 205, 196, 0.3) !important; color: #047857 !important; }
+    .stWarning { background: rgba(255, 230, 109, 0.2) !important; border: 1px solid rgba(234, 179, 8, 0.4) !important; color: #92400e !important; }
+    .stError { background: rgba(255, 107, 107, 0.1) !important; border: 1px solid rgba(255, 107, 107, 0.3) !important; color: #b91c1c !important; }
+
+    .stCodeBlock { background: #1e293b !important; border-radius: 10px !important; }
+    .stCodeBlock code { color: #e2e8f0 !important; }
+    .streamlit-expanderHeader { background: rgba(241, 245, 249, 0.9) !important; }
+    hr { border-color: rgba(78, 205, 196, 0.2) !important; }
+    [data-testid="stTooltipIcon"] { color: #4ECDC4 !important; }
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
+</style>
+"""
+    else:
+        # Dark mode colors (default)
+        return """
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    
+    * { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; }
+    code, pre, .stCodeBlock { font-family: 'JetBrains Mono', monospace !important; }
+
+    /* ========================================
+       COLOR PALETTE - DARK MODE
+       Primary: Coral (#FF6B6B) 
+       Secondary: Teal (#4ECDC4)
+       Accent: Gold (#FFE66D)
+       Dark: Slate (#1a1d29)
+       ======================================== */
+
+    /* Main background - rich dark gradient */
+    .stApp {
+        background: linear-gradient(135deg, #0f1117 0%, #1a1d29 50%, #141821 100%);
+    }
+    
+    /* Animated background orbs */
+    .stApp::before {
+        content: '';
+        position: fixed;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: 
+            radial-gradient(circle at 20% 80%, rgba(78, 205, 196, 0.08) 0%, transparent 50%),
+            radial-gradient(circle at 80% 20%, rgba(255, 107, 107, 0.08) 0%, transparent 50%),
+            radial-gradient(circle at 40% 40%, rgba(255, 230, 109, 0.04) 0%, transparent 40%);
+        animation: float 20s ease-in-out infinite;
+        pointer-events: none;
+        z-index: -1;
+    }
+    
+    @keyframes float {
+        0%, 100% { transform: translate(0, 0) rotate(0deg); }
+        33% { transform: translate(2%, 2%) rotate(1deg); }
+        66% { transform: translate(-1%, 1%) rotate(-1deg); }
+    }
+
+    /* ========================================
+       SIDEBAR - Sleek & Modern
+       ======================================== */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #12141c 0%, #1a1d29 100%);
+        border-right: 1px solid rgba(78, 205, 196, 0.15);
+    }
+    
+    /* Collapsed sidebar - ensure visibility */
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        background: linear-gradient(180deg, #12141c 0%, #1a1d29 100%) !important;
+        min-width: 2.5rem !important;
+    }
+    
+    /* Sidebar collapse/expand button */
+    button[data-testid="stSidebarCollapseButton"],
+    button[data-testid="baseButton-headerNoPadding"] {
+        color: #FF6B6B !important;
+        background: rgba(255, 107, 107, 0.1) !important;
+        border-radius: 8px !important;
+    }
+    
+    button[data-testid="stSidebarCollapseButton"]:hover,
+    button[data-testid="baseButton-headerNoPadding"]:hover {
+        background: rgba(255, 107, 107, 0.2) !important;
+    }
+    
+    /* Sidebar expand button when collapsed - FORCE VISIBILITY */
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        background: linear-gradient(180deg, #1a1d29 0%, #12141c 100%) !important;
+        border-right: 2px solid rgba(255, 107, 107, 0.3) !important;
+        min-width: 3rem !important;
+        padding: 0.5rem !important;
+    }
+    
+    [data-testid="stSidebarCollapsedControl"] button,
+    [data-testid="collapsedControl"] button,
+    [data-testid="stSidebarNavCollapseIcon"],
+    button[kind="headerNoPadding"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        color: #FF6B6B !important;
+        background: rgba(255, 107, 107, 0.2) !important;
+        border-radius: 8px !important;
+        min-width: 2rem !important;
+        min-height: 2rem !important;
+    }
+    
+    [data-testid="stSidebarCollapsedControl"] svg,
+    [data-testid="collapsedControl"] svg {
+        fill: #FF6B6B !important;
+        stroke: #FF6B6B !important;
+        width: 1.5rem !important;
+        height: 1.5rem !important;
+    }
+    
+    section[data-testid="stSidebar"] .stMarkdown h2 {
+        background: linear-gradient(135deg, #FF6B6B 0%, #FF8E8E 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
-        font-size: 1.6rem;
+        font-size: 1.5rem;
         letter-spacing: -0.02em;
     }
     
-    /* HIGH CONTRAST TEXT - All text elements */
+    /* Sidebar text - high contrast */
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] span,
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] .stRadio label,
+    section[data-testid="stSidebar"] [data-baseweb="radio"] span {
+        color: #e8eaed !important;
+        font-weight: 500 !important;
+    }
+
+    /* ========================================
+       TYPOGRAPHY - Clear & Readable
+       ======================================== */
     .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span,
     .stMarkdown td, .stMarkdown th {
-        color: #f1f5f9 !important;
+        color: #e8eaed !important;
+        line-height: 1.7;
     }
     
     .stMarkdown strong, .stMarkdown b {
         color: #ffffff !important;
+        font-weight: 700;
     }
     
     .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
         color: #ffffff !important;
+        font-weight: 700;
     }
-    
-    /* Captions and help text */
-    .stCaption, [data-testid="stCaption"] {
-        color: #cbd5e1 !important;
-        font-size: 0.9rem !important;
-    }
-    
-    /* Help tooltips */
-    [data-testid="stTooltipIcon"] {
-        color: #a5b4fc !important;
-    }
-    
-    /* Labels with high contrast */
+
+    /* Labels - bright & clear */
     label, .stTextInput label, .stNumberInput label, .stSelectbox label, 
     .stSlider label, .stCheckbox label, .stRadio label, .stMultiSelect label {
         color: #ffffff !important;
         font-weight: 600 !important;
-        font-size: 1rem !important;
+        font-size: 0.95rem !important;
     }
     
-    /* Input placeholder text */
-    input::placeholder, textarea::placeholder {
-        color: #94a3b8 !important;
+    /* CHECKBOX TEXT - FORCE WHITE */
+    .stCheckbox, .stCheckbox span, .stCheckbox label, .stCheckbox label span,
+    .stCheckbox p, .stCheckbox div,
+    [data-testid="stCheckbox"], [data-testid="stCheckbox"] span,
+    [data-testid="stCheckbox"] label, [data-testid="stCheckbox"] p,
+    [data-baseweb="checkbox"] span, [data-baseweb="checkbox"] + div {
+        color: #ffffff !important;
+        font-weight: 500 !important;
+        -webkit-text-fill-color: #ffffff !important;
     }
     
-    /* Expander header text */
-    .streamlit-expanderHeader p {
-        color: #f1f5f9 !important;
-        font-weight: 600 !important;
+    /* RADIO TEXT - FORCE WHITE */
+    .stRadio, .stRadio span, .stRadio label, .stRadio label span,
+    .stRadio p, .stRadio div,
+    [data-testid="stRadio"], [data-testid="stRadio"] span,
+    [data-testid="stRadio"] label, [data-testid="stRadio"] p,
+    [data-baseweb="radio"] span, [data-baseweb="radio"] + div {
+        color: #ffffff !important;
+        font-weight: 500 !important;
+        -webkit-text-fill-color: #ffffff !important;
     }
     
-    /* Tab panel glass effect */
+    /* Captions */
+    .stCaption, [data-testid="stCaption"] {
+        color: #d1d5db !important;
+        font-size: 0.875rem !important;
+    }
+    
+    /* Expander text */
+    .streamlit-expanderHeader, .streamlit-expanderHeader p,
+    .streamlit-expanderContent, .streamlit-expanderContent p,
+    .streamlit-expanderContent span, .streamlit-expanderContent label,
+    [data-testid="stExpander"], [data-testid="stExpander"] p,
+    [data-testid="stExpander"] span {
+        color: #ffffff !important;
+    }
+
+    /* ========================================
+       TABS - Elegant Design
+       ======================================== */
     .stTabs [data-baseweb="tab-panel"] {
-        background: rgba(20, 20, 35, 0.8);
-        border-radius: 20px;
-        border: 1px solid rgba(102, 126, 234, 0.2);
-        padding: 28px;
-        backdrop-filter: blur(20px);
+        background: rgba(26, 29, 41, 0.85);
+        border-radius: 16px;
+        border: 1px solid rgba(78, 205, 196, 0.12);
+        padding: 24px;
+        backdrop-filter: blur(12px);
     }
     
-    /* Tab styling */
     .stTabs [data-baseweb="tab-list"] {
-        background: rgba(15, 15, 25, 0.9);
-        border-radius: 14px;
-        padding: 8px;
-        gap: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(18, 20, 28, 0.9);
+        border-radius: 12px;
+        padding: 6px;
+        gap: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
     }
     
     .stTabs [data-baseweb="tab"] {
         background: transparent;
-        border-radius: 10px;
-        color: #94a3b8 !important;
+        border-radius: 8px;
+        color: #9ca3af !important;
         font-weight: 600;
-        padding: 14px 24px;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        padding: 12px 20px;
+        transition: all 0.25s ease;
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        background: rgba(102, 126, 234, 0.2);
+        background: rgba(78, 205, 196, 0.1);
         color: #ffffff !important;
     }
     
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+        background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%) !important;
         color: #ffffff !important;
-        box-shadow: 0 8px 32px rgba(99, 102, 241, 0.4);
+        box-shadow: 0 4px 20px rgba(255, 107, 107, 0.35);
     }
-    
-    /* Button styling - premium gradient */
+
+    /* ========================================
+       BUTTONS - Vibrant & Interactive
+       ======================================== */
     .stButton > button {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+        background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
         color: white !important;
         border: none;
-        border-radius: 14px;
-        padding: 14px 32px;
+        border-radius: 10px;
+        padding: 12px 28px;
         font-weight: 700;
-        font-size: 0.95rem;
-        letter-spacing: 0.03em;
+        font-size: 0.9rem;
+        letter-spacing: 0.02em;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
-        text-transform: uppercase;
+        box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
     }
     
     .stButton > button:hover {
-        transform: translateY(-4px) scale(1.02);
-        box-shadow: 0 16px 40px rgba(99, 102, 241, 0.5);
+        transform: translateY(-3px);
+        box-shadow: 0 8px 28px rgba(255, 107, 107, 0.45);
     }
     
     .stButton > button:active {
         transform: translateY(-1px);
     }
     
-    /* Primary button - emerald gradient */
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%);
-        box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+    /* Secondary button style */
+    .stButton > button[kind="secondary"] {
+        background: linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%);
+        box-shadow: 0 4px 16px rgba(78, 205, 196, 0.3);
     }
     
-    .stButton > button[kind="primary"]:hover {
-        box-shadow: 0 16px 40px rgba(16, 185, 129, 0.5);
+    .stButton > button[kind="secondary"]:hover {
+        box-shadow: 0 8px 28px rgba(78, 205, 196, 0.45);
     }
-    
-    /* Input fields - better contrast */
+
+    /* ========================================
+       INPUTS - Clean & Modern
+       ======================================== */
     .stTextInput > div > div > input,
     .stNumberInput > div > div > input,
     .stTextArea > div > textarea {
-        background: rgba(15, 15, 25, 0.9) !important;
-        border: 2px solid rgba(100, 116, 139, 0.4) !important;
-        border-radius: 12px !important;
-        color: #f8fafc !important;
-        font-size: 1rem !important;
-        padding: 14px 16px !important;
+        background: rgba(18, 20, 28, 0.9) !important;
+        border: 1.5px solid rgba(156, 163, 175, 0.25) !important;
+        border-radius: 10px !important;
+        color: #f3f4f6 !important;
+        font-size: 0.95rem !important;
+        padding: 12px 14px !important;
+        transition: all 0.2s ease;
     }
     
     .stTextInput > div > div > input:focus,
     .stNumberInput > div > div > input:focus,
     .stTextArea > div > textarea:focus {
-        border-color: #818cf8 !important;
-        box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.2) !important;
+        border-color: #4ECDC4 !important;
+        box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.15) !important;
     }
     
-    .stTextInput > div > div > input::placeholder {
-        color: #64748b !important;
+    .stTextInput > div > div > input::placeholder,
+    .stTextArea > div > textarea::placeholder {
+        color: #6b7280 !important;
+    }
+
+    /* Select boxes */
+    .stSelectbox > div > div,
+    .stMultiSelect > div > div {
+        background: rgba(18, 20, 28, 0.9) !important;
+        border: 1.5px solid rgba(156, 163, 175, 0.25) !important;
+        border-radius: 10px !important;
+        color: #f3f4f6 !important;
     }
     
-    /* Slider styling */
+    /* Slider */
     .stSlider > div > div > div > div {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+        background: linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%) !important;
     }
     
     .stSlider [data-testid="stTickBarMin"],
     .stSlider [data-testid="stTickBarMax"] {
-        color: #cbd5e1 !important;
+        color: #9ca3af !important;
     }
-    
-    /* Select box */
-    .stSelectbox > div > div,
-    .stMultiSelect > div > div {
-        background: rgba(15, 15, 25, 0.9) !important;
-        border: 2px solid rgba(100, 116, 139, 0.4) !important;
-        border-radius: 12px !important;
-        color: #f8fafc !important;
-    }
-    
-    /* Metric cards - glass morphism with glow */
+
+    /* ========================================
+       METRICS - Glassmorphic Cards
+       ======================================== */
     [data-testid="stMetric"] {
-        background: linear-gradient(135deg, rgba(30, 30, 50, 0.9) 0%, rgba(20, 20, 35, 0.9) 100%);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        border-radius: 20px;
-        padding: 24px;
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        background: linear-gradient(145deg, rgba(26, 29, 41, 0.9) 0%, rgba(18, 20, 28, 0.9) 100%);
+        border: 1px solid rgba(78, 205, 196, 0.15);
+        border-radius: 14px;
+        padding: 20px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
     }
     
     [data-testid="stMetric"]:hover {
-        border-color: rgba(129, 140, 248, 0.5);
-        transform: translateY(-4px);
-        box-shadow: 0 12px 40px rgba(99, 102, 241, 0.2);
+        border-color: rgba(255, 107, 107, 0.4);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(255, 107, 107, 0.15);
     }
     
     [data-testid="stMetricLabel"] {
-        color: #94a3b8 !important;
-        font-size: 0.9rem !important;
+        color: #9ca3af !important;
+        font-size: 0.85rem !important;
         font-weight: 600 !important;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.04em;
     }
     
     [data-testid="stMetricValue"] {
-        font-size: 2.2rem !important;
+        font-size: 2rem !important;
         font-weight: 800 !important;
         color: #ffffff !important;
     }
-    
-    [data-testid="stMetricDelta"] {
-        font-weight: 600 !important;
-    }
-    
-    /* Main title - vibrant gradient with glow */
+
+    /* ========================================
+       CUSTOM CLASSES - Premium Elements
+       ======================================== */
     .main-title {
-        font-size: 3.2rem;
+        font-size: 2.8rem;
         font-weight: 800;
-        background: linear-gradient(135deg, #818cf8 0%, #a78bfa 30%, #c084fc 60%, #f472b6 100%);
+        background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 40%, #FFE66D 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin-bottom: 0.5rem;
         letter-spacing: -0.03em;
-        text-shadow: 0 0 60px rgba(129, 140, 248, 0.5);
     }
     
     .subtitle {
-        color: #cbd5e1 !important;
-        font-size: 1.15rem;
+        color: #9ca3af !important;
+        font-size: 1.1rem;
         font-weight: 500;
-        margin-bottom: 2.5rem;
+        margin-bottom: 2rem;
     }
     
-    /* Section headers - high contrast */
     .section-header {
-        font-size: 1.5rem;
+        font-size: 1.4rem;
         font-weight: 700;
-        color: #f1f5f9 !important;
-        margin: 2rem 0 1.2rem 0;
+        color: #ffffff !important;
+        margin: 1.5rem 0 1rem 0;
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
     }
-    
-    /* Status badges - brighter colors */
-    .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 16px;
-        border-radius: 24px;
-        font-size: 0.9rem;
-        font-weight: 700;
-    }
-    
-    .badge-success {
-        background: rgba(16, 185, 129, 0.2);
-        color: #34d399 !important;
-        border: 2px solid rgba(16, 185, 129, 0.4);
-    }
-    
-    .badge-warning {
-        background: rgba(251, 191, 36, 0.2);
-        color: #fcd34d !important;
-        border: 2px solid rgba(251, 191, 36, 0.4);
-    }
-    
-    .badge-error {
-        background: rgba(244, 63, 94, 0.2);
-        color: #fb7185 !important;
-        border: 2px solid rgba(244, 63, 94, 0.4);
-    }
-    
-    .badge-info {
-        background: rgba(99, 102, 241, 0.2);
-        color: #a5b4fc !important;
-        border: 2px solid rgba(99, 102, 241, 0.4);
-    }
-    
-    /* Feature cards - premium glass with border glow */
+
+    /* Feature cards */
     .feature-card {
-        background: linear-gradient(145deg, rgba(30, 30, 50, 0.95) 0%, rgba(20, 20, 35, 0.95) 100%);
-        border: 1px solid rgba(102, 126, 234, 0.25);
-        border-radius: 24px;
-        padding: 32px;
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        background: linear-gradient(145deg, rgba(26, 29, 41, 0.95) 0%, rgba(18, 20, 28, 0.95) 100%);
+        border: 1px solid rgba(78, 205, 196, 0.12);
+        border-radius: 16px;
+        padding: 28px;
+        transition: all 0.3s ease;
         height: 100%;
-        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
     }
     
     .feature-card:hover {
-        border-color: rgba(139, 92, 246, 0.6);
-        transform: translateY(-8px);
-        box-shadow: 0 24px 48px rgba(99, 102, 241, 0.25);
+        border-color: rgba(255, 107, 107, 0.4);
+        transform: translateY(-4px);
+        box-shadow: 0 16px 32px rgba(255, 107, 107, 0.12);
     }
     
     .feature-icon {
-        font-size: 3rem;
-        margin-bottom: 20px;
-        filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.3));
+        font-size: 2.5rem;
+        margin-bottom: 16px;
     }
     
     .feature-title {
-        font-size: 1.35rem;
+        font-size: 1.2rem;
         font-weight: 700;
-        color: #f8fafc !important;
-        margin-bottom: 12px;
+        color: #ffffff !important;
+        margin-bottom: 10px;
     }
     
     .feature-desc {
-        color: #cbd5e1 !important;
-        font-size: 1rem;
-        line-height: 1.7;
+        color: #9ca3af !important;
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+
+    /* Status badges */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
     }
     
-    /* Info boxes - higher contrast */
+    .badge-success {
+        background: rgba(78, 205, 196, 0.15);
+        color: #4ECDC4 !important;
+        border: 1px solid rgba(78, 205, 196, 0.3);
+    }
+    
+    .badge-warning {
+        background: rgba(255, 230, 109, 0.15);
+        color: #FFE66D !important;
+        border: 1px solid rgba(255, 230, 109, 0.3);
+    }
+    
+    .badge-error {
+        background: rgba(255, 107, 107, 0.15);
+        color: #FF6B6B !important;
+        border: 1px solid rgba(255, 107, 107, 0.3);
+    }
+    
+    .badge-info {
+        background: rgba(99, 179, 237, 0.15);
+        color: #63B3ED !important;
+        border: 1px solid rgba(99, 179, 237, 0.3);
+    }
+
+    /* ========================================
+       ALERTS & NOTIFICATIONS
+       ======================================== */
     .stInfo {
-        background: rgba(99, 102, 241, 0.15) !important;
-        border: 2px solid rgba(99, 102, 241, 0.4) !important;
-        border-radius: 14px !important;
-        color: #e0e7ff !important;
+        background: rgba(99, 179, 237, 0.1) !important;
+        border: 1px solid rgba(99, 179, 237, 0.3) !important;
+        border-radius: 10px !important;
+        color: #bee3f8 !important;
     }
     
     .stSuccess {
-        background: rgba(16, 185, 129, 0.15) !important;
-        border: 2px solid rgba(16, 185, 129, 0.4) !important;
-        border-radius: 14px !important;
-        color: #d1fae5 !important;
+        background: rgba(78, 205, 196, 0.1) !important;
+        border: 1px solid rgba(78, 205, 196, 0.3) !important;
+        border-radius: 10px !important;
+        color: #b2f5ea !important;
     }
     
     .stWarning {
-        background: rgba(251, 191, 36, 0.15) !important;
-        border: 2px solid rgba(251, 191, 36, 0.4) !important;
-        border-radius: 14px !important;
+        background: rgba(255, 230, 109, 0.1) !important;
+        border: 1px solid rgba(255, 230, 109, 0.3) !important;
+        border-radius: 10px !important;
         color: #fef3c7 !important;
     }
     
     .stError {
-        background: rgba(244, 63, 94, 0.15) !important;
-        border: 2px solid rgba(244, 63, 94, 0.4) !important;
-        border-radius: 14px !important;
-        color: #fecdd3 !important;
+        background: rgba(255, 107, 107, 0.1) !important;
+        border: 1px solid rgba(255, 107, 107, 0.3) !important;
+        border-radius: 10px !important;
+        color: #fed7d7 !important;
     }
-    
-    /* Code blocks */
+
+    /* ========================================
+       CODE & EXPANDERS
+       ======================================== */
     .stCodeBlock {
-        background: rgba(10, 10, 18, 0.95) !important;
-        border: 1px solid rgba(100, 116, 139, 0.3) !important;
-        border-radius: 14px !important;
+        background: rgba(12, 14, 20, 0.95) !important;
+        border: 1px solid rgba(78, 205, 196, 0.15) !important;
+        border-radius: 10px !important;
     }
     
     .stCodeBlock code {
-        color: #e2e8f0 !important;
+        color: #e8eaed !important;
     }
     
-    /* Expander */
     .streamlit-expanderHeader {
-        background: rgba(20, 20, 35, 0.9) !important;
-        border-radius: 12px !important;
-        color: #f1f5f9 !important;
+        background: rgba(18, 20, 28, 0.9) !important;
+        border-radius: 10px !important;
+        color: #e8eaed !important;
         font-weight: 600 !important;
     }
     
-    /* Divider */
     hr {
-        border-color: rgba(100, 116, 139, 0.3) !important;
-        margin: 2.5rem 0 !important;
+        border-color: rgba(78, 205, 196, 0.15) !important;
+        margin: 2rem 0 !important;
+    }
+
+    /* ========================================
+       SCROLLBAR & MISC
+       ======================================== */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
     }
     
-    /* Radio buttons */
-    .stRadio label {
-        color: #e2e8f0 !important;
-        font-weight: 500 !important;
+    ::-webkit-scrollbar-track {
+        background: #1a1d29;
     }
     
-    /* Checkbox */
-    .stCheckbox label {
-        color: #e2e8f0 !important;
-        font-weight: 500 !important;
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(135deg, #FF6B6B, #4ECDC4);
+        border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(135deg, #FF8E53, #44A08D);
     }
     
     /* Hide Streamlit branding */
@@ -531,11 +828,19 @@ st.markdown("""
     
     /* JSON viewer */
     .stJson {
-        background: rgba(10, 10, 18, 0.95) !important;
-        border-radius: 12px !important;
+        background: rgba(12, 14, 20, 0.95) !important;
+        border-radius: 10px !important;
+    }
+    
+    /* Tooltip */
+    [data-testid="stTooltipIcon"] {
+        color: #4ECDC4 !important;
     }
 </style>
-""", unsafe_allow_html=True)
+"""
+
+# Apply the theme CSS
+st.markdown(get_theme_css(st.session_state.theme), unsafe_allow_html=True)
 
 
 # ============================================================================
@@ -550,6 +855,7 @@ def init_session_state():
         'training_logs': [],
         'training_running': False,
         'log_queue': None,
+        'theme': 'dark',  # 'dark' or 'light'
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -735,6 +1041,10 @@ def page_data_preparation():
         process_folder,
         load_helper_model,
         preprocess_with_llm,
+        # Open Router functions
+        is_openrouter_configured,
+        get_openrouter_config,
+        preprocess_with_openrouter,
     )
     
     # Two main tabs
@@ -943,36 +1253,98 @@ def page_data_preparation():
                 topic = "the content"
         
         # ---- AI ENHANCEMENT ----
-        with st.expander("🤖 AI-Enhanced Generation (Optional)"):
-            st.markdown("Use a small LLM to generate intelligent Q&A pairs or summaries.")
+        with st.expander("🤖 AI-Enhanced Generation (Optional)", expanded=False):
+            st.markdown("Use AI to generate intelligent Q&A pairs or summaries. Choose between fast cloud API or local model.")
             
-            use_ai = st.checkbox("✨ Enable AI Enhancement", value=False, help="Use Qwen3-0.6B for smarter data generation")
+            use_ai = st.checkbox("✨ Enable AI Enhancement", value=False, help="Use AI for smarter data generation")
             
             if use_ai:
-                if 'helper_model' not in st.session_state:
-                    st.session_state.helper_model = None
-                    st.session_state.helper_tokenizer = None
+                # Check if Open Router is configured
+                openrouter_ready = is_openrouter_configured()
                 
-                col_a, col_b = st.columns([2, 1])
-                with col_a:
-                    helper_model_name = st.text_input("🤖 Model", value="Qwen/Qwen3-0.6B", help="Small model for data generation")
-                with col_b:
-                    if st.button("📥 Load Model"):
-                        with st.spinner(f"Loading {helper_model_name}..."):
-                            try:
-                                model, tokenizer = load_helper_model(helper_model_name)
-                                st.session_state.helper_model = model
-                                st.session_state.helper_tokenizer = tokenizer
-                                st.success("✅ Model loaded!")
-                            except Exception as e:
-                                st.error(f"❌ {e}")
+                # AI Provider selection
+                ai_provider = st.radio(
+                    "🔌 AI Provider",
+                    options=["openrouter", "local"],
+                    format_func=lambda x: {
+                        "openrouter": "☁️ Open Router (Fast Cloud API)",
+                        "local": "💻 Local Model (Slower, No API needed)"
+                    }[x],
+                    horizontal=True,
+                    help="Open Router is faster but requires an API key. Local runs on your machine."
+                )
                 
-                if st.session_state.helper_model:
-                    st.success("✅ AI model ready")
-                    ai_format = st.radio("AI Generation", ["qa", "summary"], format_func=lambda x: {"qa": "❓ Q&A", "summary": "📝 Summary"}[x], horizontal=True)
+                if ai_provider == "openrouter":
+                    # Open Router configuration
+                    if openrouter_ready:
+                        config = get_openrouter_config()
+                        st.success(f"✅ Open Router configured with model: `{config['model']}`")
+                        
+                        # Allow custom model override
+                        col_a, col_b = st.columns([2, 1])
+                        with col_a:
+                            openrouter_model = st.text_input(
+                                "🤖 Model", 
+                                value=config["model"], 
+                                help="Open Router model ID (e.g., qwen/qwen3-0.6b-04-28, openai/gpt-4o-mini)",
+                                key="openrouter_model_input"
+                            )
+                        with col_b:
+                            st.markdown("#### ")
+                            st.markdown("[📖 View Models](https://openrouter.ai/models)")
+                        
+                        st.session_state.openrouter_model = openrouter_model
+                        st.session_state.use_openrouter = True
+                    else:
+                        st.warning("⚠️ Open Router not configured. Add `OPENROUTER_API_KEY` to your `.env` file.")
+                        st.markdown("""
+                        **To configure Open Router:**
+                        1. Get an API key from [openrouter.ai/keys](https://openrouter.ai/keys)
+                        2. Add to your `.env` file:
+                        ```
+                        OPENROUTER_API_KEY=sk-or-your-key-here
+                        OPENROUTER_MODEL=qwen/qwen3-0.6b-04-28
+                        ```
+                        3. Restart the app
+                        """)
+                        st.session_state.use_openrouter = False
                 else:
-                    st.warning("⚠️ Load AI model first to enable")
-                    ai_format = "qa"
+                    # Local model configuration
+                    st.session_state.use_openrouter = False
+                    
+                    if 'helper_model' not in st.session_state:
+                        st.session_state.helper_model = None
+                        st.session_state.helper_tokenizer = None
+                    
+                    col_a, col_b = st.columns([2, 1])
+                    with col_a:
+                        helper_model_name = st.text_input("🤖 Model", value="Qwen/Qwen3-0.6B", help="Small model for data generation")
+                    with col_b:
+                        if st.button("📥 Load Model"):
+                            with st.spinner(f"Loading {helper_model_name}..."):
+                                try:
+                                    model, tokenizer = load_helper_model(helper_model_name)
+                                    st.session_state.helper_model = model
+                                    st.session_state.helper_tokenizer = tokenizer
+                                    st.success("✅ Model loaded!")
+                                except Exception as e:
+                                    st.error(f"❌ {e}")
+                    
+                    if st.session_state.helper_model:
+                        st.success("✅ AI model ready")
+                    else:
+                        st.warning("⚠️ Load AI model first to enable")
+                
+                # AI format selection (common to both providers)
+                ai_format = st.radio(
+                    "AI Generation", 
+                    ["qa", "summary"], 
+                    format_func=lambda x: {"qa": "❓ Q&A", "summary": "📝 Summary"}[x], 
+                    horizontal=True
+                )
+            else:
+                ai_format = "qa"
+                st.session_state.use_openrouter = False
         
         st.divider()
         
@@ -995,6 +1367,10 @@ def page_data_preparation():
                 try:
                     all_examples = []
                     
+                    # Determine AI mode
+                    use_openrouter = use_ai and st.session_state.get('use_openrouter', False)
+                    use_local_model = use_ai and not use_openrouter and st.session_state.get('helper_model') is not None
+                    
                     # Process folder if applicable
                     if files_to_process:
                         for i, file_path in enumerate(files_to_process):
@@ -1004,7 +1380,18 @@ def page_data_preparation():
                             with open(file_path, "r", encoding="utf-8") as f:
                                 text = f.read()
                             
-                            if use_ai and st.session_state.helper_model:
+                            if use_openrouter:
+                                # Use Open Router API
+                                examples = preprocess_with_openrouter(
+                                    text, 
+                                    output_format=ai_format, 
+                                    chunk_size=chunk_size,
+                                    clean_timestamps=clean_timestamps, 
+                                    clean_urls=clean_urls,
+                                    model=st.session_state.get('openrouter_model'),
+                                )
+                            elif use_local_model:
+                                # Use local model
                                 examples = preprocess_with_llm(
                                     text, st.session_state.helper_model, st.session_state.helper_tokenizer,
                                     output_format=ai_format, chunk_size=chunk_size,
@@ -1019,11 +1406,25 @@ def page_data_preparation():
                             all_examples.extend(examples)
                     else:
                         # Process single text
-                        if use_ai and st.session_state.helper_model:
-                            def progress_cb(current, total):
-                                progress_bar.progress((current + 1) / total)
-                                status_text.text(f"Processing chunk {current + 1}/{total}...")
-                            
+                        def progress_cb(current, total):
+                            # Clamp progress to max 1.0 to avoid Streamlit error
+                            progress_value = min((current + 1) / max(total, 1), 1.0)
+                            progress_bar.progress(progress_value)
+                            status_text.text(f"Processing chunk {min(current + 1, total)}/{total}...")
+                        
+                        if use_openrouter:
+                            # Use Open Router API
+                            all_examples = preprocess_with_openrouter(
+                                raw_text, 
+                                output_format=ai_format, 
+                                chunk_size=chunk_size,
+                                clean_timestamps=clean_timestamps, 
+                                clean_urls=clean_urls,
+                                model=st.session_state.get('openrouter_model'),
+                                progress_callback=progress_cb,
+                            )
+                        elif use_local_model:
+                            # Use local model
                             all_examples = preprocess_with_llm(
                                 raw_text, st.session_state.helper_model, st.session_state.helper_tokenizer,
                                 output_format=ai_format, chunk_size=chunk_size,
@@ -1218,13 +1619,15 @@ def render_simple_mode(config):
     # Suggestions
     with st.expander("💡 Recommended Models for Apple Silicon"):
         st.markdown("""
-        | Model | Size | Best For |
-        |-------|------|----------|
-        | `meta-llama/Llama-3.2-1B` | 1B | Fast testing, quick iterations |
-        | `meta-llama/Llama-3.2-3B` | 3B | Balanced quality and speed |
-        | `Qwen/Qwen2.5-1.5B` | 1.5B | Excellent multilingual support |
-        | `microsoft/Phi-3-mini-4k-instruct` | 3.8B | Very efficient, good for chat |
-        | `google/gemma-2-2b` | 2B | Google's compact model |
+        | Model | Size | RAM | Best For |
+        |-------|------|-----|----------|
+        | `HuggingFaceTB/SmolLM2-135M` | 135M | ~1GB | Ultra-fast research, testing |
+        | `HuggingFaceTB/SmolLM2-360M` | 360M | ~2GB | Efficient on-device tasks |
+        | `Qwen/Qwen2.5-0.5B-Instruct` | 0.5B | ~2GB | High instruction-following |
+        | `h2oai/h2o-danube3-500m-base`| 500M | ~2GB | Balanced SLM experimentation |
+        | `meta-llama/Llama-3.2-1B` | 1B | 4GB | Fast testing, quick iterations |
+        | `meta-llama/Llama-3.2-3B` | 3B | 8GB | Balanced quality and speed |
+        | `Qwen/Qwen2.5-7B` | 7B | 16GB+ | High quality production |
         """)
     
     st.divider()
@@ -1488,6 +1891,27 @@ def render_execute_section(config):
             **Learning Rate:** {config.training.learning_rate:.0e}
             """)
     
+    # Terminal command helper
+    with st.expander("💻 Run from Terminal (Recommended for Performance)", expanded=False):
+        st.info("💡 Running training from the terminal uses significantly fewer resources and prevents the browser from freezing.")
+        
+        st.markdown("⚠️ **Important:** Ensure you are in the project root directory:")
+        st.code(f"cd {PROJECT_ROOT}", language="bash")
+        
+        st.markdown("Then, run this command to start training with your current settings:")
+        st.code("make train-current", language="bash")
+        
+        with st.expander("Alternative: Direct Python Command"):
+            st.code(f"./.venv/bin/python scripts/train.py --config configs/current.yaml", language="bash")
+        
+        st.markdown(f"""
+        **Recommended Workflow:**
+        1. Click **'🚀 START TRAINING'** above (this saves your settings to `configs/current.yaml`).
+        2. Once logs start, click **'🛑 STOP'** to free up the GPU.
+        3. Run `make train-current` in your terminal.
+        4. **Close this browser tab**!
+        """)
+
     # Action buttons
     col1, col2, col3 = st.columns([2, 1, 1])
     
@@ -1544,29 +1968,54 @@ def render_execute_section(config):
     st.markdown("### 📋 Training Logs")
     log_container = st.empty()
     
+    
     if st.session_state.training_running and st.session_state.training_process:
         process = st.session_state.training_process
+        return_code = process.poll()
         
-        if process.poll() is None:
+        # Read available logs
+        try:
+            # Make output non-blocking
+            import os
             try:
-                for line in iter(process.stdout.readline, ''):
-                    if line:
-                        st.session_state.training_logs.append(line.strip())
-                        if len(st.session_state.training_logs) > 100:
-                            st.session_state.training_logs = st.session_state.training_logs[-100:]
-                    else:
-                        break
+                os.set_blocking(process.stdout.fileno(), False)
             except:
                 pass
+                
+            # Read output
+            output = process.stdout.read()
+            if output:
+                new_lines = [line for line in output.split('\n') if line.strip()]
+                st.session_state.training_logs.extend(new_lines)
+                # Keep logs manageable
+                if len(st.session_state.training_logs) > 500:
+                    st.session_state.training_logs = st.session_state.training_logs[-500:]
+        except Exception as e:
+            # Ignore read errors
+            pass
             
-            time.sleep(0.5)
-            st.rerun()
-        else:
-            remaining = process.stdout.read()
-            if remaining:
-                st.session_state.training_logs.extend(remaining.strip().split('\n'))
+        # Check if process finished
+        if return_code is not None:
+            # Use strict type check to avoid false positives with 0
+            if return_code == 0:
+                st.success("✅ Training completed successfully!")
+                st.balloons()
+            else:
+                st.error(f"❌ Training failed with exit code {return_code}")
+                # Try to read stderr if failed
+                try:
+                    remaining_out = process.stdout.read()
+                    if remaining_out:
+                         st.session_state.training_logs.extend(remaining_out.split('\n'))
+                except:
+                    pass
+            
             st.session_state.training_running = False
-            st.success("✅ Training completed!")
+            # Final output update
+        else:
+            # Rerun quickly to stream logs
+            time.sleep(0.1)
+            st.rerun()
     
     if st.session_state.training_logs:
         log_container.code('\n'.join(st.session_state.training_logs[-50:]), language="text")
@@ -1749,6 +2198,16 @@ def main():
             st.markdown("---")
             st.markdown("### 🔄 Status")
             st.warning("⏳ Training in progress...")
+        
+        # Theme toggle at bottom
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🌙" if st.session_state.theme == 'light' else "☀️", 
+                        help="Switch to Light Mode" if st.session_state.theme == 'dark' else "Switch to Dark Mode",
+                        key="theme_toggle"):
+                st.session_state.theme = 'light' if st.session_state.theme == 'dark' else 'dark'
+                st.rerun()
     
     # Route to appropriate page
     if page == "🏠 Home":

@@ -5,6 +5,8 @@ mlx-lm>=0.21.0
 # Hugging Face integration
 huggingface_hub>=0.24.0
 transformers>=4.40.0
+torch>=2.0.0
+accelerate>=0.25.0
 
 # Configuration and utilities
 pyyaml>=6.0

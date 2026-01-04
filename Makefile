@@ -1,19 +1,30 @@
-.PHONY: setup train prepare-data upload clean-logs
+VENV = .venv
+PYTHON = $(VENV)/bin/python
+PIP = $(VENV)/bin/pip
+STREAMLIT = $(VENV)/bin/streamlit
+
+.PHONY: setup train train-current prepare-data run upload clean-logs clean
+
+run:
+	$(STREAMLIT) run app.py
 
 setup:
-	python -m venv venv
-	./venv/bin/pip install -r requirements.txt
+	python3 -m venv $(VENV)
+	$(PIP) install -r requirements.txt
 	cp .env.example .env
 	@echo "Setup complete. Please edit your .env file."
 
 prepare-data:
-	./venv/bin/python scripts/prepare_data.py --input data/raw/dataset.json --output data/processed
+	$(PYTHON) scripts/prepare_data.py --input data/raw/dataset.json --output data/processed
 
 train:
-	./venv/bin/python scripts/train.py --config configs/default.yaml
+	$(PYTHON) scripts/train.py --config configs/default.yaml
+
+train-current:
+	$(PYTHON) scripts/train.py --config configs/current.yaml
 
 upload:
-	./venv/bin/python scripts/upload_to_hf.py --model outputs/adapters/final
+	$(PYTHON) scripts/upload_to_hf.py --model outputs/adapters/final
 
 clean-logs:
 	rm -rf outputs/logs/*

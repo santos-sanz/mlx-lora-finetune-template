@@ -36,6 +36,7 @@ def apply_lora(
     alpha: int = 16,
     dropout: float = 0.0,
     target_modules: Optional[list] = None,
+    num_layers: int = -1,
 ) -> Any:
     """
     Apply LoRA adapters to model.
@@ -45,12 +46,13 @@ def apply_lora(
         rank: LoRA rank
         alpha: LoRA alpha scaling factor
         dropout: Dropout probability
-        target_modules: List of module names to apply LoRA to
+        target_modules: List of module names to apply LoRA to (keys in config)
+        num_layers: Number of layers to apply LoRA to (-1 for all layers)
     
     Returns:
         Model with LoRA adapters applied
     """
-    from mlx_lm.tuner.utils import apply_lora_layers
+    from mlx_lm.tuner.utils import linear_to_lora_layers
     
     if target_modules is None:
         target_modules = [
@@ -58,18 +60,31 @@ def apply_lora(
             "gate_proj", "up_proj", "down_proj"
         ]
     
+    # Build LoRA config for the new API
     lora_config = {
         "rank": rank,
         "alpha": alpha,
         "dropout": dropout,
         "scale": alpha / rank,
+        "keys": target_modules,
     }
     
-    model = apply_lora_layers(model, target_modules, lora_config)
+    # Get number of layers from model if not specified
+    if num_layers == -1:
+        # Try to get from model architecture
+        if hasattr(model, 'layers'):
+            num_layers = len(model.layers)
+        elif hasattr(model, 'model') and hasattr(model.model, 'layers'):
+            num_layers = len(model.model.layers)
+        else:
+            num_layers = 32  # Default fallback
     
-    num_params = sum(p.size for n, p in model.trainable_parameters().items())
-    print(f"Applied LoRA with rank={rank}, alpha={alpha}")
-    print(f"Trainable parameters: {num_params:,}")
+    linear_to_lora_layers(model, num_layers, lora_config)
+    
+    # Use mlx_lm's helper to count trainable parameters
+    from mlx_lm.tuner.utils import print_trainable_parameters
+    print(f"Applied LoRA with rank={rank}, alpha={alpha} to {num_layers} layers")
+    print_trainable_parameters(model)
     
     return model
 

@@ -10,6 +10,7 @@ import json
 
 import mlx.core as mx
 import mlx.nn as nn
+import mlx.optimizers as optim
 from mlx.utils import tree_flatten
 
 
@@ -132,7 +133,7 @@ class LoRATrainer:
             print(f"Validation samples: {len(self.val_data)}")
         
         # Setup optimizer
-        optimizer = mx.optimizers.AdamW(
+        optimizer = optim.AdamW(
             learning_rate=self.learning_rate,
             weight_decay=self.weight_decay,
         )
