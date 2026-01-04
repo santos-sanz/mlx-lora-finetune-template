@@ -54,13 +54,14 @@ def apply_lora(
     """
     from mlx_lm.tuner.utils import linear_to_lora_layers
     
-    if target_modules is None:
-        target_modules = [
-            "q_proj", "v_proj", "k_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj"
-        ]
+    # Freeze the base model
+    model.freeze()
+    
+    # Freeze the base model
+    model.freeze()
     
     # Build LoRA config for the new API
+    # If target_modules is None, mlx_lm will auto-detect linear layers
     lora_config = {
         "rank": rank,
         "alpha": alpha,
@@ -80,6 +81,8 @@ def apply_lora(
             num_layers = 32  # Default fallback
     
     linear_to_lora_layers(model, num_layers, lora_config)
+    
+    # Use mlx_lm's helper to count trainable parameters
     
     # Use mlx_lm's helper to count trainable parameters
     from mlx_lm.tuner.utils import print_trainable_parameters
@@ -148,7 +151,19 @@ def save_adapters(
     output_path.mkdir(parents=True, exist_ok=True)
     
     # Get trainable (LoRA) parameters only
-    trainable_params = dict(model.trainable_parameters())
+    def flatten_params(container, parent_key="", sep="."):
+        items = []
+        iterator = container.items() if isinstance(container, dict) else enumerate(container)
+        
+        for k, v in iterator:
+            new_key = f"{parent_key}{sep}{k}" if parent_key else str(k)
+            if isinstance(v, (dict, list)):
+                items.extend(flatten_params(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+
+    trainable_params = flatten_params(model.trainable_parameters())
     
     # Save adapters
     mx.save_safetensors(str(output_path / "adapters.safetensors"), trainable_params)

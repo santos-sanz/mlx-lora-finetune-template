@@ -245,8 +245,22 @@ class LoRATrainer:
         checkpoint_dir = self.output_dir / "checkpoints" / name
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
-        # Save adapter weights
-        trainable_params = dict(self.model.trainable_parameters())
+        # trainable_parameters() returns a nested dictionary which save_safetensors cannot handle.
+        # We must flatten it to a keys-dot-notation dictionary.
+        def flatten_params(container, parent_key="", sep="."):
+            items = []
+            iterator = container.items() if isinstance(container, dict) else enumerate(container)
+            
+            for k, v in iterator:
+                new_key = f"{parent_key}{sep}{k}" if parent_key else str(k)
+                if isinstance(v, (dict, list)):
+                    items.extend(flatten_params(v, new_key, sep=sep).items())
+                else:
+                    items.append((new_key, v))
+            return dict(items)
+            
+        trainable_params = flatten_params(self.model.trainable_parameters())
+        
         mx.save_safetensors(str(checkpoint_dir / "adapters.safetensors"), trainable_params)
         
         # Save training state
