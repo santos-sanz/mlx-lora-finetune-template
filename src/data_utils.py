@@ -1173,3 +1173,168 @@ def preprocess_with_openrouter(
     else:
         raise ValueError(f"Open Router format must be 'qa' or 'summary', got: {output_format}")
 
+
+# ============================================================================
+# Two-Agent System for High-Quality Data Generation
+# ============================================================================
+
+def preprocess_with_agents(
+    text: str,
+    intention: str,
+    personality: str = "Helpful and informative",
+    question_types: Optional[List[str]] = None,
+    chunk_size: int = 1500,
+    chunk_overlap: int = 200,
+    clean_timestamps: bool = True,
+    clean_urls: bool = False,
+    questions_per_chunk: int = 2,
+    api_key: Optional[str] = None,
+    meta_model: Optional[str] = None,
+    generator_model: Optional[str] = None,
+    progress_callback: callable = None,
+    max_workers: int = 10,
+) -> Tuple[List[Dict[str, str]], str]:
+    """
+    Two-Agent preprocessing pipeline for high-quality Q&A generation.
+    
+    Uses a Meta-Agent to analyze the fine-tuning intention and create
+    a specialized prompt, then a Generator-Agent to create Q&A pairs
+    aligned with the objectives.
+    
+    Args:
+        text: Raw text content
+        intention: Fine-tuning intention/objective
+                  Example: "Train a model that gives business advice like Alex Hormozi"
+        personality: Target personality/style for responses
+                    Example: "Direct, practical, with concrete numbers"
+        question_types: Types of questions to generate
+                       Example: ["Practical", "Strategic", "How-to"]
+        chunk_size: Target chunk size (larger for more context)
+        chunk_overlap: Overlap between chunks
+        clean_timestamps: Remove timestamps
+        clean_urls: Remove URLs
+        questions_per_chunk: Number of Q&A pairs per chunk
+        api_key: OpenRouter API key
+        meta_model: Model for Meta-Agent (smarter model recommended)
+        generator_model: Model for Generator-Agent
+        progress_callback: Callback for progress updates
+        max_workers: Number of parallel workers
+    
+    Returns:
+        Tuple of (list of training examples, specialized prompt used)
+    """
+    from src.agents.meta_agent import MetaAgent
+    from src.agents.generator_agent import GeneratorAgent
+    
+    # Clean the text
+    cleaned = clean_text(
+        text,
+        remove_timestamps=clean_timestamps,
+        remove_urls=clean_urls,
+        normalize_whitespace=True,
+    )
+    
+    # Chunk the text (larger chunks for more context)
+    chunks = chunk_text(cleaned, chunk_size=chunk_size, overlap=chunk_overlap)
+    
+    # Step 1: Meta-Agent analyzes content and generates specialized prompt
+    meta_agent = MetaAgent(api_key=api_key, model=meta_model)
+    
+    # Analyze source content for context
+    source_context = meta_agent.analyze_source_content(cleaned)
+    
+    # Generate the specialized prompt
+    specialized_prompt = meta_agent.generate_specialized_prompt(
+        intention=intention,
+        personality=personality,
+        question_types=question_types,
+        source_context=source_context,
+    )
+    
+    # Step 2: Generator-Agent creates Q&A pairs using the specialized prompt
+    generator = GeneratorAgent(
+        specialized_prompt=specialized_prompt,
+        api_key=api_key,
+        model=generator_model,
+        max_workers=max_workers,
+    )
+    
+    examples = generator.generate_qa_pairs(
+        chunks=chunks,
+        questions_per_chunk=questions_per_chunk,
+        progress_callback=progress_callback,
+    )
+    
+    return examples, specialized_prompt
+
+
+def process_with_agents(
+    input_path: Union[str, Path],
+    output_dir: Union[str, Path],
+    intention: str,
+    personality: str = "Helpful and informative",
+    question_types: Optional[List[str]] = None,
+    val_ratio: float = 0.1,
+    chunk_size: int = 1500,
+    api_key: Optional[str] = None,
+    meta_model: Optional[str] = None,
+    generator_model: Optional[str] = None,
+    progress_callback: callable = None,
+    **kwargs,
+) -> Tuple[Path, Path, str]:
+    """
+    Process a text file using the two-agent system.
+    
+    Args:
+        input_path: Path to raw text file
+        output_dir: Output directory
+        intention: Fine-tuning intention
+        personality: Target personality
+        question_types: Types of questions
+        val_ratio: Validation split ratio
+        chunk_size: Chunk size
+        api_key: OpenRouter API key
+        meta_model: Meta-Agent model
+        generator_model: Generator-Agent model
+        progress_callback: Progress callback
+        **kwargs: Additional args
+    
+    Returns:
+        Tuple of (train_path, valid_path, specialized_prompt)
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Load text
+    text = load_raw_text(input_path)
+    
+    # Process with agents
+    examples, specialized_prompt = preprocess_with_agents(
+        text=text,
+        intention=intention,
+        personality=personality,
+        question_types=question_types,
+        chunk_size=chunk_size,
+        api_key=api_key,
+        meta_model=meta_model,
+        generator_model=generator_model,
+        progress_callback=progress_callback,
+        **kwargs,
+    )
+    
+    # Split
+    train_data, val_data = create_train_val_split(examples, val_ratio=val_ratio)
+    
+    # Save
+    train_path = output_dir / "train.jsonl"
+    val_path = output_dir / "valid.jsonl"
+    
+    save_jsonl(train_data, train_path)
+    save_jsonl(val_data, val_path)
+    
+    print(f"Processed with two-agent system → {len(examples)} examples")
+    print(f"Saved {len(train_data)} training examples to {train_path}")
+    print(f"Saved {len(val_data)} validation examples to {val_path}")
+    
+    return train_path, val_path, specialized_prompt
+

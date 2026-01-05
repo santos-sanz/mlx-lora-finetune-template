@@ -24,7 +24,7 @@ train-current:
 	$(PYTHON) scripts/train.py --config configs/current.yaml
 
 upload:
-	$(PYTHON) scripts/upload_to_hf.py --model outputs/adapters/final
+	$(PYTHON) scripts/upload_to_hf.py --model outputs/checkpoints/final
 
 clean-logs:
 	rm -rf outputs/logs/*

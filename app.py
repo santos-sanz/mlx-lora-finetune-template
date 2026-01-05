@@ -1045,10 +1045,12 @@ def page_data_preparation():
         is_openrouter_configured,
         get_openrouter_config,
         preprocess_with_openrouter,
+        # Two-Agent system
+        preprocess_with_agents,
     )
     
-    # Two main tabs
-    tab1, tab2 = st.tabs(["📋 Structured JSON", "📝 Raw Text / Folder"])
+    # Three main tabs
+    tab1, tab2, tab3 = st.tabs(["📋 Structured JSON", "📝 Raw Text / Folder", "🤖 Agent-Assisted (High Quality)"])
     
     # ========== TAB 1: Structured JSON Data ==========
     with tab1:
@@ -1463,6 +1465,262 @@ def page_data_preparation():
                             
                 except Exception as e:
                     st.error(f"❌ Error: {e}")
+    
+    # ========== TAB 3: Agent-Assisted High Quality Generation ==========
+    with tab3:
+        st.markdown('<h2 class="section-header">🤖 Agent-Assisted Data Generation</h2>', unsafe_allow_html=True)
+        st.markdown("""
+        Generate **high-quality** Q&A training data using a two-agent system:
+        1. **Meta-Agent**: Analyzes your fine-tuning intention and creates a specialized prompt
+        2. **Generator-Agent**: Uses that prompt to create focused, actionable Q&A pairs
+        """)
+        
+        # Check if Open Router is configured
+        openrouter_ready = is_openrouter_configured()
+        
+        if not openrouter_ready:
+            st.error("⚠️ **Open Router API required**. Add `OPENROUTER_API_KEY` to your `.env` file.")
+            st.markdown("""
+            **To configure:**
+            1. Get an API key from [openrouter.ai/keys](https://openrouter.ai/keys)
+            2. Add to `.env`: `OPENROUTER_API_KEY=sk-or-your-key-here`
+            3. Restart the app
+            """)
+        else:
+            st.success("✅ Open Router configured and ready")
+            
+            st.markdown("---")
+            st.markdown('<h3 class="section-header">🎯 Fine-Tuning Objective</h3>', unsafe_allow_html=True)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                intention = st.text_area(
+                    "📌 What do you want the model to learn?",
+                    value="I want to train a model that gives practical business and sales advice, focusing on lead generation, customer acquisition, and revenue growth strategies.",
+                    height=120,
+                    help="Describe your fine-tuning goal. Be specific about the knowledge and skills you want the model to acquire.",
+                    key="agent_intention"
+                )
+                
+                personality = st.text_area(
+                    "🎭 What personality/style should the model have?",
+                    value="Direct and no-nonsense. Uses concrete numbers and examples. Gives actionable advice rather than vague suggestions. Speaks like a successful entrepreneur sharing hard-won lessons.",
+                    height=100,
+                    help="Describe how the model should respond - its tone, style, and approach.",
+                    key="agent_personality"
+                )
+            
+            with col2:
+                st.markdown("**📋 Types of Questions to Generate**")
+                q_practical = st.checkbox("💡 Practical / How-to", value=True, help="Step-by-step actionable questions")
+                q_strategic = st.checkbox("🎯 Strategic / Decision-making", value=True, help="Why and when to apply strategies")
+                q_application = st.checkbox("🔧 Application / Implementation", value=True, help="How to apply concepts in real scenarios")
+                q_mistakes = st.checkbox("⚠️ Mistakes / What to avoid", value=True, help="Common pitfalls and how to avoid them")
+                q_comparison = st.checkbox("⚖️ Comparisons / Trade-offs", value=False, help="Comparing approaches and their trade-offs")
+                
+                question_types = []
+                if q_practical: question_types.append("Practical/How-to")
+                if q_strategic: question_types.append("Strategic/Decision-making")
+                if q_application: question_types.append("Application/Implementation")
+                if q_mistakes: question_types.append("Mistakes/What to avoid")
+                if q_comparison: question_types.append("Comparisons/Trade-offs")
+            
+            st.markdown("---")
+            st.markdown('<h3 class="section-header">📄 Source Content</h3>', unsafe_allow_html=True)
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                agent_input_file = file_picker(
+                    "📄 Text File",
+                    default_path="data/raw/raw_txt.txt",
+                    file_types=[".txt", ".md"],
+                    key="agent_input_file"
+                )
+                
+                agent_output_dir = folder_picker(
+                    "📁 Output Directory",
+                    default_path="data/processed",
+                    key="agent_output_dir"
+                )
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    agent_chunk_size = st.slider("📏 Chunk Size", min_value=500, max_value=3000, value=1500, step=100, help="Larger = more context per chunk", key="agent_chunk")
+                    agent_questions = st.slider("❓ Q&A per Chunk", min_value=1, max_value=5, value=2, step=1, help="Number of Q&A pairs to generate per text chunk", key="agent_qa_count")
+                with col_b:
+                    agent_val_split = st.slider("📊 Validation Split (%)", min_value=5, max_value=30, value=10, step=5, key="agent_val")
+            
+            with col2:
+                st.markdown("### Source Preview")
+                if Path(agent_input_file).exists():
+                    with open(agent_input_file, "r", encoding="utf-8") as f:
+                        source_text = f.read()
+                    st.success(f"✓ {len(source_text):,} characters")
+                    st.text(source_text[:300] + "..." if len(source_text) > 300 else source_text)
+                else:
+                    st.warning("⚠️ File not found")
+                    source_text = ""
+            
+            st.markdown("---")
+            
+            # Model Configuration expander
+            with st.expander("🔧 Model Configuration", expanded=True):
+                st.markdown("**Choose how to run the AI models:**")
+                
+                agent_provider = st.radio(
+                    "🔌 Provider",
+                    options=["openrouter", "local"],
+                    format_func=lambda x: {
+                        "openrouter": "☁️ OpenRouter API (Fast, requires API key)",
+                        "local": "💻 Local HuggingFace (Slower, no API needed)"
+                    }[x],
+                    horizontal=True,
+                    key="agent_provider"
+                )
+                
+                if agent_provider == "openrouter":
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        meta_model = st.text_input(
+                            "🧠 Meta-Agent Model",
+                            value="mistralai/devstral-2512:free",
+                            help="Model for analyzing intention (smarter is better)",
+                            key="meta_model"
+                        )
+                    with col2:
+                        gen_model = st.text_input(
+                            "⚡ Generator Model",
+                            value=get_openrouter_config()["model"],
+                            help="Model for Q&A generation (can be faster/cheaper)",
+                            key="gen_model"
+                        )
+                    st.markdown("[📖 Browse OpenRouter Models](https://openrouter.ai/models)")
+                    
+                    # Store provider choice
+                    use_local_hf = False
+                    local_model_name = None
+                    
+                else:  # Local HuggingFace
+                    st.info("💡 Local mode uses HuggingFace models on your machine. Requires more RAM and is slower.")
+                    
+                    local_model_name = st.text_input(
+                        "🤖 HuggingFace Model",
+                        value="Qwen/Qwen3-0.6B",
+                        help="Model ID from HuggingFace Hub",
+                        key="local_hf_model"
+                    )
+                    
+                    # Check if model is loaded
+                    if 'agent_local_model' not in st.session_state:
+                        st.session_state.agent_local_model = None
+                        st.session_state.agent_local_tokenizer = None
+                    
+                    col1, col2 = st.columns([1, 2])
+                    with col1:
+                        if st.button("📥 Load Model", key="load_local_agent_model"):
+                            with st.spinner(f"Loading {local_model_name}..."):
+                                try:
+                                    model, tokenizer = load_helper_model(local_model_name)
+                                    st.session_state.agent_local_model = model
+                                    st.session_state.agent_local_tokenizer = tokenizer
+                                    st.success("✅ Model loaded!")
+                                except Exception as e:
+                                    st.error(f"❌ Failed: {e}")
+                    with col2:
+                        if st.session_state.agent_local_model:
+                            st.success(f"✅ Model ready: {local_model_name}")
+                        else:
+                            st.warning("⚠️ Load model before generating")
+                    
+                    # For local mode, we'll use same model for both agents
+                    meta_model = None
+                    gen_model = None
+                    use_local_hf = True
+            
+            # Generate button
+            can_generate = source_text and (not use_local_hf or st.session_state.get('agent_local_model'))
+            
+            if st.button("🚀 Generate High-Quality Dataset", type="primary", use_container_width=True, disabled=not can_generate):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                prompt_display = st.empty()
+                
+                try:
+                    def progress_cb(current, total):
+                        progress_value = min((current + 1) / max(total, 1), 1.0)
+                        progress_bar.progress(progress_value)
+                        status_text.text(f"⚡ Processing chunk {min(current + 1, total)}/{total}...")
+                    
+                    if use_local_hf:
+                        # Local HuggingFace mode
+                        status_text.text("🧠 Processing with local model...")
+                        
+                        # For local mode, we use the simpler preprocess_with_llm
+                        examples = preprocess_with_llm(
+                            text=source_text,
+                            model=st.session_state.agent_local_model,
+                            tokenizer=st.session_state.agent_local_tokenizer,
+                            output_format="qa",
+                            chunk_size=agent_chunk_size,
+                            questions_per_chunk=agent_questions,
+                            progress_callback=progress_cb,
+                        )
+                        specialized_prompt = f"[Local Mode] Using {local_model_name} to generate Q&A pairs based on intention: {intention}"
+                    else:
+                        # OpenRouter mode with two-agent system
+                        status_text.text("🧠 Meta-Agent analyzing content and generating specialized prompt...")
+                        
+                        examples, specialized_prompt = preprocess_with_agents(
+                            text=source_text,
+                            intention=intention,
+                            personality=personality,
+                            question_types=question_types,
+                            chunk_size=agent_chunk_size,
+                            questions_per_chunk=agent_questions,
+                            meta_model=meta_model,
+                            generator_model=gen_model,
+                            progress_callback=progress_cb,
+                        )
+                    
+                    if not examples:
+                        st.error("❌ No examples generated. Check your content or try different settings.")
+                    else:
+                        # Save results
+                        train_data, val_data = create_train_val_split(examples, val_ratio=agent_val_split / 100)
+                        
+                        output_path = Path(agent_output_dir)
+                        output_path.mkdir(parents=True, exist_ok=True)
+                        
+                        train_path = output_path / "train.jsonl"
+                        val_path = output_path / "valid.jsonl"
+                        
+                        save_jsonl(train_data, train_path)
+                        save_jsonl(val_data, val_path)
+                        
+                        st.session_state.config.data.train_file = str(train_path)
+                        st.session_state.config.data.valid_file = str(val_path)
+                        
+                        status_text.empty()
+                        st.success(f"✅ Generated **{len(train_data)}** training + **{len(val_data)}** validation examples!")
+                        
+                        # Show the specialized prompt that was used
+                        with st.expander("📋 Specialized Prompt Used (from Meta-Agent)"):
+                            st.code(specialized_prompt, language="text")
+                        
+                        # Show sample output
+                        with st.expander("🔍 Sample Generated Q&A"):
+                            for i, example in enumerate(examples[:3]):
+                                st.markdown(f"**Example {i+1}:**")
+                                st.code(example["text"], language="text")
+                                st.markdown("---")
+                
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+                    import traceback
+                    with st.expander("Error Details"):
+                        st.code(traceback.format_exc())
     
     # Footer
     st.divider()
@@ -2076,7 +2334,7 @@ def page_upload():
     if upload_type == "Final Model":
         model_path = st.text_input(
             "📁 Model Path",
-            value=str(Path(config.output.adapters_dir) / "final"),
+            value=str(Path(config.output.checkpoints_dir) / "final"),
             help="Directory containing the final adapter weights"
         )
         

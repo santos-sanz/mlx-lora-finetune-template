@@ -125,7 +125,7 @@ def main():
     print(f"Final loss: {stats['final_loss']:.4f}")
     if stats['best_val_loss']:
         print(f"Best validation loss: {stats['best_val_loss']:.4f}")
-    print(f"Model saved to: {config.output.adapters_dir}")
+    print(f"Model saved to: {config.output.checkpoints_dir}/final")
     print("=" * 60)
 
 
