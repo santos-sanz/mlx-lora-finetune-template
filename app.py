@@ -856,16 +856,27 @@ def init_session_state():
         'training_running': False,
         'log_queue': None,
         'theme': 'dark',  # 'dark' or 'light'
+        # Testing page state
+        'test_base_model': None,
+        'test_finetuned_model': None,
+        'test_tokenizer': None,
+        'test_chat_history': [],
+        'selected_checkpoint': None,
+        'test_models_loaded': False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
     
-    # Load default config if not loaded
+    # Load config if not loaded - prefer current.yaml, fall back to default.yaml
     if st.session_state.config is None:
-        config_path = PROJECT_ROOT / "configs" / "default.yaml"
-        if config_path.exists():
-            st.session_state.config = Config.from_yaml(str(config_path))
+        current_config_path = PROJECT_ROOT / "configs" / "current.yaml"
+        default_config_path = PROJECT_ROOT / "configs" / "default.yaml"
+        
+        if current_config_path.exists():
+            st.session_state.config = Config.from_yaml(str(current_config_path))
+        elif default_config_path.exists():
+            st.session_state.config = Config.from_yaml(str(default_config_path))
         else:
             st.session_state.config = Config()
 
@@ -2282,6 +2293,507 @@ def render_execute_section(config):
 
 
 # ============================================================================
+# Page: Model Testing
+# ============================================================================
+
+def get_available_checkpoints():
+    """Get list of available checkpoints from outputs/checkpoints folder."""
+    checkpoints_dir = PROJECT_ROOT / "outputs" / "checkpoints"
+    if not checkpoints_dir.exists():
+        return []
+    
+    checkpoints = []
+    for item in checkpoints_dir.iterdir():
+        if item.is_dir() and (item / "adapters.safetensors").exists():
+            checkpoints.append(item.name)
+    
+    # Sort by name (step-X will be sorted numerically if possible)
+    def sort_key(name):
+        if name.startswith("step-"):
+            try:
+                return (1, int(name.split("-")[1]))
+            except:
+                return (1, 0)
+        elif name == "best":
+            return (0, 0)
+        elif name == "final":
+            return (2, 0)
+        return (3, name)
+    
+    return sorted(checkpoints, key=sort_key)
+
+
+def load_test_models(checkpoint_name: str):
+    """Load base and fine-tuned models for comparison."""
+    from src.model_utils import load_base_model, apply_lora
+    import mlx.core as mx
+    
+    config = st.session_state.config
+    checkpoint_path = PROJECT_ROOT / "outputs" / "checkpoints" / checkpoint_name
+    adapter_file = checkpoint_path / "adapters.safetensors"
+    
+    # First, load the adapter weights to extract target modules and rank
+    adapters = mx.load(str(adapter_file))
+    
+    # Extract unique target modules from adapter keys
+    # Keys are like: model.layers.0.conv.in_proj.lora_a, model.layers.0.feed_forward.w1.lora_b
+    target_modules = set()
+    lora_rank = None
+    
+    for key, value in adapters.items():
+        # Extract rank from lora_a weights (shape is [in_features, rank] in MLX)
+        if key.endswith('.lora_a') and lora_rank is None:
+            lora_rank = value.shape[1]
+        
+        # Remove the lora_a/lora_b suffix and the model.layers.X prefix
+        parts = key.split('.')
+        # Find the module name after layers.X
+        for i, part in enumerate(parts):
+            if part == 'layers' and i + 1 < len(parts):
+                # Skip the layer number, get the rest until lora_a/lora_b
+                module_parts = parts[i+2:-1]  # Skip 'layers', layer_num, and 'lora_a/b'
+                if module_parts:
+                    module_name = '.'.join(module_parts)
+                    target_modules.add(module_name)
+                break
+    
+    target_modules_list = list(target_modules) if target_modules else None
+    lora_rank = lora_rank or config.lora.rank
+    lora_alpha = config.lora.alpha if config.lora.alpha else lora_rank * 2
+    
+    print(f"Extracted from checkpoint: rank={lora_rank}, modules={target_modules_list}")
+    
+    # Load base model for fine-tuned version
+    model, tokenizer = load_base_model(config.model.name)
+    st.session_state.test_tokenizer = tokenizer
+    
+    # Create a copy for base model (without adapters)
+    base_model, _ = load_base_model(config.model.name)
+    st.session_state.test_base_model = base_model
+    
+    # Apply LoRA using the extracted parameters from the checkpoint
+    model = apply_lora(
+        model,
+        rank=lora_rank,
+        alpha=lora_alpha,
+        dropout=0.0,  # Dropout not needed for inference
+        target_modules=target_modules_list,
+    )
+    
+    # Load adapter weights with strict=False to handle any mismatches
+    model.load_weights(list(adapters.items()), strict=False)
+    
+    st.session_state.test_finetuned_model = model
+    st.session_state.selected_checkpoint = checkpoint_name
+    st.session_state.test_models_loaded = True
+
+
+
+def generate_response(model, tokenizer, prompt: str, max_tokens: int = 256, temperature: float = 0.7, template: str = None):
+    """Generate a response from the model."""
+    from mlx_lm import generate
+    
+    # Apply template if provided
+    formatted_prompt = prompt
+    if template and "{response}" in template:
+        # Extract the part before the response placeholder
+        # This gives us the prompt structure ending right where the model should start generating
+        prompt_structure = template.split("{response}")[0]
+        try:
+            formatted_prompt = prompt_structure.format(instruction=prompt)
+        except Exception as e:
+            print(f"Error formatting prompt with template: {e}")
+            formatted_prompt = prompt
+            
+    print(f"Generating with prompt: {formatted_prompt!r}")
+    
+    response = generate(
+        model,
+        tokenizer,
+        prompt=formatted_prompt,
+        max_tokens=max_tokens,
+        verbose=False,
+    )
+    return response
+
+
+def render_chat_comparison_panel():
+    """Render the dual chat comparison panel."""
+    st.markdown('<h2 class="section-header">💬 Chat Comparison</h2>', unsafe_allow_html=True)
+    st.markdown("Compare responses from the base model vs the fine-tuned model side by side.")
+    
+    config = st.session_state.config
+    
+    # Checkpoint selection
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        checkpoints = get_available_checkpoints()
+        if not checkpoints:
+            st.warning("⚠️ No checkpoints found. Train a model first!")
+            return
+        
+        selected = st.selectbox(
+            "📁 Select Checkpoint",
+            options=checkpoints,
+            index=checkpoints.index("best") if "best" in checkpoints else 0,
+            help="Choose which checkpoint to load for the fine-tuned model"
+        )
+    
+    with col2:
+        if st.button("📥 Load Models", type="primary", use_container_width=True):
+            with st.spinner("Loading models... This may take a while."):
+                try:
+                    load_test_models(selected)
+                    st.success("✅ Models loaded!")
+                except Exception as e:
+                    st.error(f"❌ Error loading models: {e}")
+    
+    with col3:
+        if st.button("🗑️ Unload", use_container_width=True, disabled=not st.session_state.test_models_loaded):
+            st.session_state.test_base_model = None
+            st.session_state.test_finetuned_model = None
+            st.session_state.test_tokenizer = None
+            st.session_state.test_models_loaded = False
+            st.session_state.test_chat_history = []
+            st.rerun()
+    
+    # Model status
+    if st.session_state.test_models_loaded:
+        st.success(f"✅ Models loaded from checkpoint: **{st.session_state.selected_checkpoint}**")
+    else:
+        st.info("💡 Click 'Load Models' to start comparing responses.")
+        return
+    
+    st.divider()
+    
+    # Generation parameters
+    with st.expander("⚙️ Generation Parameters", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            max_tokens = st.slider("Max Tokens", 32, 512, 256, step=32)
+        with col2:
+            temperature = st.slider("Temperature", 0.0, 2.0, 0.7, step=0.1)
+        with col3:
+            st.markdown("**Model:**")
+            st.code(config.model.name.split('/')[-1])
+    
+    # Input field
+    user_input = st.text_area(
+        "💭 Enter your question or prompt:",
+        placeholder="Ask a question to compare how the base and fine-tuned models respond...",
+        height=100,
+        key="test_input"
+    )
+    
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        generate_btn = st.button("🚀 Generate", type="primary", use_container_width=True, disabled=not user_input)
+    with col2:
+        if st.button("🗑️ Clear History", use_container_width=True):
+            st.session_state.test_chat_history = []
+            st.rerun()
+    
+    if generate_btn and user_input:
+        with st.spinner("Generating responses..."):
+            try:
+                # Generate from base model
+                base_response = generate_response(
+                    st.session_state.test_base_model,
+                    st.session_state.test_tokenizer,
+                    user_input,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    template=config.data.prompt_template
+                )
+                
+                # Generate from fine-tuned model
+                finetuned_response = generate_response(
+                    st.session_state.test_finetuned_model,
+                    st.session_state.test_tokenizer,
+                    user_input,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    template=config.data.prompt_template
+                )
+                
+                # Add to history
+                st.session_state.test_chat_history.append({
+                    "prompt": user_input,
+                    "base_response": base_response,
+                    "finetuned_response": finetuned_response
+                })
+            except Exception as e:
+                st.error(f"❌ Error generating response: {e}")
+    
+    # Display chat history
+    if st.session_state.test_chat_history:
+        for i, entry in enumerate(reversed(st.session_state.test_chat_history)):
+            st.markdown(f"### 💭 Prompt {len(st.session_state.test_chat_history) - i}")
+            st.markdown(f"**{entry['prompt']}**")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("#### 🔵 Base Model")
+                st.markdown(f"""
+                <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 10px; padding: 16px;">
+                {entry['base_response']}
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown("#### 🟢 Fine-tuned Model")
+                st.markdown(f"""
+                <div style="background: rgba(78, 205, 196, 0.1); border: 1px solid rgba(78, 205, 196, 0.3); border-radius: 10px; padding: 16px;">
+                {entry['finetuned_response']}
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.divider()
+
+
+def render_training_metrics_panel():
+    """Render the training metrics visualization panel."""
+    st.markdown('<h2 class="section-header">📈 Training Metrics</h2>', unsafe_allow_html=True)
+    st.markdown("Visualize training progress and configuration parameters.")
+    
+    config = st.session_state.config
+    checkpoints = get_available_checkpoints()
+    
+    if not checkpoints:
+        st.warning("⚠️ No checkpoints found. Train a model first!")
+        return
+    
+    col1, col2 = st.columns([2, 3])
+    
+    with col1:
+        st.markdown("### ⚙️ Training Configuration")
+        
+        st.markdown(f"""
+        | Parameter | Value |
+        |-----------|-------|
+        | **Model** | `{config.model.name}` |
+        | **LoRA Rank** | {config.lora.rank} |
+        | **LoRA Alpha** | {config.lora.alpha} |
+        | **Dropout** | {config.lora.dropout} |
+        | **Learning Rate** | {config.training.learning_rate:.2e} |
+        | **Batch Size** | {config.training.batch_size} |
+        | **Epochs** | {config.training.num_epochs} |
+        | **Warmup Steps** | {config.training.warmup_steps} |
+        | **Max Seq Length** | {config.model.max_seq_length} |
+        """)
+        
+        st.markdown("### 💾 Available Checkpoints")
+        for cp in checkpoints:
+            adapter_path = PROJECT_ROOT / "outputs" / "checkpoints" / cp / "adapters.safetensors"
+            if adapter_path.exists():
+                size_mb = adapter_path.stat().st_size / (1024 * 1024)
+                icon = "⭐" if cp == "best" else "🏁" if cp == "final" else "📌"
+                st.markdown(f"{icon} **{cp}** — {size_mb:.1f} MB")
+    
+    with col2:
+        st.markdown("### 📊 Training Progress")
+        
+        # Try to load training state from best/final checkpoint
+        for cp_name in ["final", "best"]:
+            state_path = PROJECT_ROOT / "outputs" / "checkpoints" / cp_name / "trainer_state.json"
+            if state_path.exists():
+                try:
+                    with open(state_path, "r") as f:
+                        state = json.load(f)
+                    
+                    col_a, col_b, col_c = st.columns(3)
+                    with col_a:
+                        st.metric("Total Steps", state.get("global_step", "N/A"))
+                    with col_b:
+                        st.metric("Epochs Completed", state.get("epoch", "N/A") + 1 if isinstance(state.get("epoch"), int) else "N/A")
+                    with col_c:
+                        best_loss = state.get("best_val_loss")
+                        if best_loss and best_loss != float("inf"):
+                            st.metric("Best Val Loss", f"{best_loss:.4f}")
+                        else:
+                            st.metric("Best Val Loss", "N/A")
+                    
+                    st.success(f"✅ Loaded training state from **{cp_name}** checkpoint")
+                    break
+                except Exception as e:
+                    st.warning(f"Could not load training state: {e}")
+        else:
+            st.info("💡 No training state file found. Run training to generate metrics.")
+        
+        # Placeholder for loss curve (would need training logs)
+        st.markdown("### 📉 Loss Curve")
+        st.info("💡 Loss curve visualization requires training log data. Run training with the built-in trainer to generate detailed logs.")
+        
+        # Show checkpoint timeline
+        st.markdown("### 🕐 Checkpoint Timeline")
+        step_checkpoints = [cp for cp in checkpoints if cp.startswith("step-")]
+        if step_checkpoints:
+            import pandas as pd
+            steps = []
+            for cp in step_checkpoints:
+                try:
+                    step_num = int(cp.split("-")[1])
+                    steps.append({"Checkpoint": cp, "Step": step_num})
+                except:
+                    pass
+            if steps:
+                df = pd.DataFrame(steps)
+                st.bar_chart(df.set_index("Checkpoint")["Step"])
+        else:
+            st.info("No step checkpoints found yet.")
+
+
+def render_batch_testing_panel():
+    """Render the batch testing panel."""
+    st.markdown('<h2 class="section-header">📋 Batch Testing</h2>', unsafe_allow_html=True)
+    st.markdown("Run automated testing on multiple questions at once.")
+    
+    if not st.session_state.test_models_loaded:
+        st.warning("⚠️ Load models first using the Chat Comparison tab!")
+        return
+    
+    # Input options
+    input_method = st.radio(
+        "📥 Input Method",
+        options=["📝 Manual Input", "📄 Upload JSONL"],
+        horizontal=True
+    )
+    
+    test_questions = []
+    
+    if input_method == "📝 Manual Input":
+        st.markdown("Enter one question per line:")
+        manual_input = st.text_area(
+            "Questions",
+            placeholder="What is machine learning?\nExplain neural networks.\nHow does gradient descent work?",
+            height=150,
+            label_visibility="collapsed"
+        )
+        if manual_input:
+            test_questions = [q.strip() for q in manual_input.split("\n") if q.strip()]
+    
+    else:
+        uploaded_file = st.file_uploader(
+            "Upload JSONL file",
+            type=["jsonl", "json"],
+            help="Each line should be a JSON object with an 'instruction' or 'question' field"
+        )
+        if uploaded_file:
+            try:
+                content = uploaded_file.read().decode("utf-8")
+                for line in content.split("\n"):
+                    if line.strip():
+                        item = json.loads(line)
+                        question = item.get("instruction") or item.get("question") or item.get("prompt") or item.get("text")
+                        if question:
+                            test_questions.append(question)
+                st.success(f"✅ Loaded {len(test_questions)} questions")
+            except Exception as e:
+                st.error(f"❌ Error parsing file: {e}")
+    
+    if test_questions:
+        st.info(f"📝 **{len(test_questions)}** questions ready for testing")
+    
+    # Generation parameters
+    with st.expander("⚙️ Generation Parameters"):
+        col1, col2 = st.columns(2)
+        with col1:
+            batch_max_tokens = st.slider("Max Tokens", 32, 512, 128, step=32, key="batch_max_tokens")
+        with col2:
+            batch_temperature = st.slider("Temperature", 0.0, 2.0, 0.7, step=0.1, key="batch_temp")
+    
+    # Run batch
+    col1, col2 = st.columns(2)
+    with col1:
+        run_batch = st.button(
+            "🚀 Run Batch Testing",
+            type="primary",
+            use_container_width=True,
+            disabled=len(test_questions) == 0
+        )
+    
+    if run_batch and test_questions:
+        results = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for i, question in enumerate(test_questions):
+            status_text.markdown(f"Processing question {i+1}/{len(test_questions)}...")
+            progress_bar.progress((i + 1) / len(test_questions))
+            
+            try:
+                # Generate from fine-tuned model only for batch testing
+                response = generate_response(
+                    st.session_state.test_finetuned_model,
+                    st.session_state.test_tokenizer,
+                    question,
+                    max_tokens=batch_max_tokens,
+                    temperature=batch_temperature
+                )
+                results.append({
+                    "Question": question,
+                    "Response": response,
+                    "Status": "✅"
+                })
+            except Exception as e:
+                results.append({
+                    "Question": question,
+                    "Response": f"Error: {e}",
+                    "Status": "❌"
+                })
+        
+        status_text.markdown("✅ **Batch testing complete!**")
+        
+        # Display results
+        import pandas as pd
+        df = pd.DataFrame(results)
+        st.dataframe(df, use_container_width=True)
+        
+        # Export options
+        st.markdown("### 📤 Export Results")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            csv_data = df.to_csv(index=False)
+            st.download_button(
+                "📥 Download CSV",
+                data=csv_data,
+                file_name="batch_test_results.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        with col2:
+            jsonl_data = "\n".join([json.dumps(r) for r in results])
+            st.download_button(
+                "📥 Download JSONL",
+                data=jsonl_data,
+                file_name="batch_test_results.jsonl",
+                mime="application/json",
+                use_container_width=True
+            )
+
+
+def page_testing():
+    """Render model testing page with three panels."""
+    st.markdown('<h1 class="main-title">🧪 Model Testing</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Compare base vs fine-tuned model • Visualize training metrics • Batch testing</p>', unsafe_allow_html=True)
+    
+    # Three tabs for the panels
+    tab1, tab2, tab3 = st.tabs(["💬 Chat Comparison", "📈 Training Metrics", "📋 Batch Testing"])
+    
+    with tab1:
+        render_chat_comparison_panel()
+    
+    with tab2:
+        render_training_metrics_panel()
+    
+    with tab3:
+        render_batch_testing_panel()
+
+
+# ============================================================================
 # Page: HuggingFace Upload
 # ============================================================================
 
@@ -2434,7 +2946,7 @@ def main():
         
         page = st.radio(
             "Navigation",
-            options=["🏠 Home", "📊 Prepare Data", "🚀 Train", "☁️ HuggingFace"],
+            options=["🏠 Home", "📊 Prepare Data", "🚀 Train", "🧪 Test Model", "☁️ HuggingFace"],
             label_visibility="collapsed"
         )
         
@@ -2474,6 +2986,8 @@ def main():
         page_data_preparation()
     elif page == "🚀 Train":
         page_training()
+    elif page == "🧪 Test Model":
+        page_testing()
     elif page == "☁️ HuggingFace":
         page_upload()
 

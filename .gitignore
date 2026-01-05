@@ -62,8 +62,6 @@ outputs/checkpoints/*
 outputs/logs/*
 !outputs/logs/.gitkeep
 
-configs/current.yaml
-
 # ML and Weights
 *.safetensors
 *.npz

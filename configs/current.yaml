@@ -1,0 +1,48 @@
+model:
+  name: LiquidAI/LFM2-2.6B-Exp
+  tokenizer: LiquidAI/LFM2-2.6B-Exp
+  max_seq_length: 2048
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.05
+  target_modules:
+  - feed_forward.w1
+  - feed_forward.w2
+  - feed_forward.w3
+  - self_attn.q_proj
+  - self_attn.v_proj
+  - self_attn.k_proj
+  - self_attn.out_proj
+  - conv.in_proj
+  - conv.out_proj
+training:
+  learning_rate: 2.0e-05
+  batch_size: 2
+  num_epochs: 10
+  gradient_accumulation_steps: 1
+  warmup_steps: 100
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  save_steps: 500
+  save_total_limit: 3
+  logging_steps: 10
+  eval_steps: 100
+data:
+  train_file: data/processed/train.jsonl
+  valid_file: data/processed/valid.jsonl
+  prompt_template: '<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+    {instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+    {response}<|eot_id|>
+
+    '
+output:
+  dir: outputs
+  adapters_dir: outputs/adapters
+  checkpoints_dir: outputs/checkpoints
+  logs_dir: outputs/logs
+huggingface:
+  push_to_hub: false
+  private: true
