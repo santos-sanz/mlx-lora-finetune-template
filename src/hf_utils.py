@@ -15,6 +15,39 @@ def get_hf_token() -> Optional[str]:
     return os.getenv("HF_TOKEN")
 
 
+def check_repo_exists(repo_id: str, token: Optional[str] = None) -> dict:
+    """
+    Check if a HuggingFace repository exists and get info.
+    
+    Args:
+        repo_id: Repository ID to check
+        token: HF token for private repos
+    
+    Returns:
+        Dictionary with 'exists' boolean and repo info if exists
+    """
+    from huggingface_hub.utils import RepositoryNotFoundError
+    
+    token = token or get_hf_token()
+    api = HfApi(token=token)
+    
+    try:
+        info = api.repo_info(repo_id=repo_id, token=token)
+        return {
+            "exists": True,
+            "private": info.private,
+            "last_modified": str(info.last_modified) if info.last_modified else None,
+            "sha": info.sha,
+            "downloads": getattr(info, 'downloads', 0),
+            "likes": getattr(info, 'likes', 0),
+            "siblings": len(info.siblings) if info.siblings else 0,  # number of files
+        }
+    except RepositoryNotFoundError:
+        return {"exists": False}
+    except Exception as e:
+        return {"exists": False, "error": str(e)}
+
+
 def download_model(
     model_id: str,
     local_dir: Optional[Union[str, Path]] = None,

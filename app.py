@@ -20,8 +20,8 @@ PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config import Config, LoRAConfig, TrainingConfig, ModelConfig, DataConfig, OutputConfig, HuggingFaceConfig
-from src.data_utils import load_dataset, convert_to_mlx_format
-from src.hf_utils import get_hf_token, upload_model, upload_checkpoint, list_checkpoints
+from src.data_utils import load_dataset, convert_to_mlx_format, generate_with_openrouter, is_openrouter_configured, get_openrouter_config
+from src.hf_utils import get_hf_token, upload_model, upload_checkpoint, list_checkpoints, check_repo_exists
 
 
 # ============================================================================
@@ -132,7 +132,7 @@ st.set_page_config(
 
 # Initialize theme in session state early
 if 'theme' not in st.session_state:
-    st.session_state.theme = 'dark'
+    st.session_state.theme = 'light'
 
 def get_theme_css(theme: str = 'dark') -> str:
     """Generate CSS based on theme selection."""
@@ -235,13 +235,13 @@ def get_theme_css(theme: str = 'dark') -> str:
 
     .stTabs [data-baseweb="tab-panel"] {
         background: rgba(255, 255, 255, 0.9); border-radius: 16px;
-        border: 1px solid rgba(78, 205, 196, 0.2); padding: 24px;
+        border: 1px solid rgba(255, 142, 83, 0.2); padding: 24px;
     }
     .stTabs [data-baseweb="tab-list"] {
         background: rgba(241, 245, 249, 0.95); border-radius: 12px; padding: 6px;
     }
     .stTabs [data-baseweb="tab"] { color: #64748b !important; font-weight: 600; }
-    .stTabs [data-baseweb="tab"]:hover { background: rgba(78, 205, 196, 0.15); color: #0f172a !important; }
+    .stTabs [data-baseweb="tab"]:hover { background: rgba(255, 142, 83, 0.15); color: #0f172a !important; }
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%) !important;
         color: #ffffff !important; box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
@@ -259,14 +259,14 @@ def get_theme_css(theme: str = 'dark') -> str:
         border-radius: 10px !important; color: #1e293b !important;
     }
     .stTextInput > div > div > input:focus, .stTextArea > div > textarea:focus {
-        border-color: #4ECDC4 !important; box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.2) !important;
+        border-color: #FF8E53 !important; box-shadow: 0 0 0 3px rgba(255, 142, 83, 0.2) !important;
     }
     .stSelectbox > div > div, .stMultiSelect > div > div {
         background: #ffffff !important; border: 1.5px solid #cbd5e1 !important; color: #1e293b !important;
     }
 
     [data-testid="stMetric"] {
-        background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(78, 205, 196, 0.2);
+        background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(255, 142, 83, 0.2);
         border-radius: 14px; padding: 20px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     }
     [data-testid="stMetricLabel"] { color: #64748b !important; }
@@ -280,22 +280,22 @@ def get_theme_css(theme: str = 'dark') -> str:
     .subtitle { color: #64748b !important; }
     .section-header { color: #0f172a !important; }
     .feature-card {
-        background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(78, 205, 196, 0.15);
+        background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(255, 142, 83, 0.15);
         border-radius: 16px; padding: 28px;
     }
     .feature-title { color: #0f172a !important; }
     .feature-desc { color: #64748b !important; }
 
     .stInfo { background: rgba(99, 179, 237, 0.1) !important; border: 1px solid rgba(99, 179, 237, 0.3) !important; color: #1e40af !important; }
-    .stSuccess { background: rgba(78, 205, 196, 0.1) !important; border: 1px solid rgba(78, 205, 196, 0.3) !important; color: #047857 !important; }
+    .stSuccess { background: rgba(34, 197, 94, 0.1) !important; border: 1px solid rgba(34, 197, 94, 0.3) !important; color: #047857 !important; }
     .stWarning { background: rgba(255, 230, 109, 0.2) !important; border: 1px solid rgba(234, 179, 8, 0.4) !important; color: #92400e !important; }
     .stError { background: rgba(255, 107, 107, 0.1) !important; border: 1px solid rgba(255, 107, 107, 0.3) !important; color: #b91c1c !important; }
 
     .stCodeBlock { background: #1e293b !important; border-radius: 10px !important; }
     .stCodeBlock code { color: #e2e8f0 !important; }
     .streamlit-expanderHeader { background: rgba(241, 245, 249, 0.9) !important; }
-    hr { border-color: rgba(78, 205, 196, 0.2) !important; }
-    [data-testid="stTooltipIcon"] { color: #4ECDC4 !important; }
+    hr { border-color: rgba(255, 142, 83, 0.2) !important; }
+    [data-testid="stTooltipIcon"] { color: #FF8E53 !important; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
 </style>
 """
@@ -311,7 +311,7 @@ def get_theme_css(theme: str = 'dark') -> str:
     /* ========================================
        COLOR PALETTE - DARK MODE
        Primary: Coral (#FF6B6B) 
-       Secondary: Teal (#4ECDC4)
+       Secondary: Orange (#FF8E53)
        Accent: Gold (#FFE66D)
        Dark: Slate (#1a1d29)
        ======================================== */
@@ -330,7 +330,7 @@ def get_theme_css(theme: str = 'dark') -> str:
         width: 200%;
         height: 200%;
         background: 
-            radial-gradient(circle at 20% 80%, rgba(78, 205, 196, 0.08) 0%, transparent 50%),
+            radial-gradient(circle at 20% 80%, rgba(255, 142, 83, 0.08) 0%, transparent 50%),
             radial-gradient(circle at 80% 20%, rgba(255, 107, 107, 0.08) 0%, transparent 50%),
             radial-gradient(circle at 40% 40%, rgba(255, 230, 109, 0.04) 0%, transparent 40%);
         animation: float 20s ease-in-out infinite;
@@ -349,7 +349,7 @@ def get_theme_css(theme: str = 'dark') -> str:
        ======================================== */
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #12141c 0%, #1a1d29 100%);
-        border-right: 1px solid rgba(78, 205, 196, 0.15);
+        border-right: 1px solid rgba(255, 142, 83, 0.15);
     }
     
     /* Collapsed sidebar - ensure visibility */
@@ -494,7 +494,7 @@ def get_theme_css(theme: str = 'dark') -> str:
     .stTabs [data-baseweb="tab-panel"] {
         background: rgba(26, 29, 41, 0.85);
         border-radius: 16px;
-        border: 1px solid rgba(78, 205, 196, 0.12);
+        border: 1px solid rgba(255, 142, 83, 0.12);
         padding: 24px;
         backdrop-filter: blur(12px);
     }
@@ -517,7 +517,7 @@ def get_theme_css(theme: str = 'dark') -> str:
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        background: rgba(78, 205, 196, 0.1);
+        background: rgba(255, 142, 83, 0.1);
         color: #ffffff !important;
     }
     
@@ -554,12 +554,12 @@ def get_theme_css(theme: str = 'dark') -> str:
     
     /* Secondary button style */
     .stButton > button[kind="secondary"] {
-        background: linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%);
-        box-shadow: 0 4px 16px rgba(78, 205, 196, 0.3);
+        background: linear-gradient(135deg, #FF8E53 0%, #e85d04 100%);
+        box-shadow: 0 4px 16px rgba(255, 142, 83, 0.3);
     }
     
     .stButton > button[kind="secondary"]:hover {
-        box-shadow: 0 8px 28px rgba(78, 205, 196, 0.45);
+        box-shadow: 0 8px 28px rgba(255, 142, 83, 0.45);
     }
 
     /* ========================================
@@ -580,8 +580,8 @@ def get_theme_css(theme: str = 'dark') -> str:
     .stTextInput > div > div > input:focus,
     .stNumberInput > div > div > input:focus,
     .stTextArea > div > textarea:focus {
-        border-color: #4ECDC4 !important;
-        box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.15) !important;
+        border-color: #FF8E53 !important;
+        box-shadow: 0 0 0 3px rgba(255, 142, 83, 0.15) !important;
     }
     
     .stTextInput > div > div > input::placeholder,
@@ -600,7 +600,7 @@ def get_theme_css(theme: str = 'dark') -> str:
     
     /* Slider */
     .stSlider > div > div > div > div {
-        background: linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%) !important;
+        background: linear-gradient(135deg, #FF8E53 0%, #e85d04 100%) !important;
     }
     
     .stSlider [data-testid="stTickBarMin"],
@@ -613,7 +613,7 @@ def get_theme_css(theme: str = 'dark') -> str:
        ======================================== */
     [data-testid="stMetric"] {
         background: linear-gradient(145deg, rgba(26, 29, 41, 0.9) 0%, rgba(18, 20, 28, 0.9) 100%);
-        border: 1px solid rgba(78, 205, 196, 0.15);
+        border: 1px solid rgba(255, 142, 83, 0.15);
         border-radius: 14px;
         padding: 20px;
         transition: all 0.3s ease;
@@ -673,7 +673,7 @@ def get_theme_css(theme: str = 'dark') -> str:
     /* Feature cards */
     .feature-card {
         background: linear-gradient(145deg, rgba(26, 29, 41, 0.95) 0%, rgba(18, 20, 28, 0.95) 100%);
-        border: 1px solid rgba(78, 205, 196, 0.12);
+        border: 1px solid rgba(255, 142, 83, 0.12);
         border-radius: 16px;
         padding: 28px;
         transition: all 0.3s ease;
@@ -716,9 +716,9 @@ def get_theme_css(theme: str = 'dark') -> str:
     }
     
     .badge-success {
-        background: rgba(78, 205, 196, 0.15);
-        color: #4ECDC4 !important;
-        border: 1px solid rgba(78, 205, 196, 0.3);
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e !important;
+        border: 1px solid rgba(34, 197, 94, 0.3);
     }
     
     .badge-warning {
@@ -750,10 +750,10 @@ def get_theme_css(theme: str = 'dark') -> str:
     }
     
     .stSuccess {
-        background: rgba(78, 205, 196, 0.1) !important;
-        border: 1px solid rgba(78, 205, 196, 0.3) !important;
+        background: rgba(34, 197, 94, 0.1) !important;
+        border: 1px solid rgba(34, 197, 94, 0.3) !important;
         border-radius: 10px !important;
-        color: #b2f5ea !important;
+        color: #bbf7d0 !important;
     }
     
     .stWarning {
@@ -775,7 +775,7 @@ def get_theme_css(theme: str = 'dark') -> str:
        ======================================== */
     .stCodeBlock {
         background: rgba(12, 14, 20, 0.95) !important;
-        border: 1px solid rgba(78, 205, 196, 0.15) !important;
+        border: 1px solid rgba(255, 142, 83, 0.15) !important;
         border-radius: 10px !important;
     }
     
@@ -791,7 +791,7 @@ def get_theme_css(theme: str = 'dark') -> str:
     }
     
     hr {
-        border-color: rgba(78, 205, 196, 0.15) !important;
+        border-color: rgba(255, 142, 83, 0.15) !important;
         margin: 2rem 0 !important;
     }
 
@@ -808,12 +808,12 @@ def get_theme_css(theme: str = 'dark') -> str:
     }
     
     ::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #FF6B6B, #4ECDC4);
+        background: linear-gradient(135deg, #FF6B6B, #FF8E53);
         border-radius: 4px;
     }
     
     ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(135deg, #FF8E53, #44A08D);
+        background: linear-gradient(135deg, #FF8E53, #e85d04);
     }
     
     /* Hide Streamlit branding */
@@ -834,7 +834,7 @@ def get_theme_css(theme: str = 'dark') -> str:
     
     /* Tooltip */
     [data-testid="stTooltipIcon"] {
-        color: #4ECDC4 !important;
+        color: #FF8E53 !important;
     }
 </style>
 """
@@ -2798,13 +2798,15 @@ def page_testing():
 # ============================================================================
 
 def page_upload():
-    """Render HuggingFace upload page."""
+    """Render HuggingFace upload page with comprehensive model metadata support."""
     st.markdown('<h1 class="main-title">☁️ HuggingFace Hub</h1>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">Publish your fine-tuned models and checkpoints to the HuggingFace Hub</p>', unsafe_allow_html=True)
     
     config = st.session_state.config
     
-    # Authentication
+    # =========================================================================
+    # Authentication Section
+    # =========================================================================
     st.markdown('<h2 class="section-header">🔐 Authentication</h2>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
@@ -2832,9 +2834,212 @@ def page_upload():
         
         private = st.checkbox("🔒 Private Repository", value=config.huggingface.private)
     
+    # Check repository status
+    if repo_id and hf_token:
+        repo_info = check_repo_exists(repo_id, hf_token)
+        if repo_info.get("exists"):
+            st.markdown(f'''
+            <div style="background: rgba(255, 142, 83, 0.15); border: 1px solid rgba(255, 142, 83, 0.3); border-radius: 10px; padding: 12px; margin: 8px 0;">
+                <span style="color: #FF8E53; font-weight: 600;">🔄 Update Existing Repository</span><br/>
+                <span style="color: #9ca3af; font-size: 0.85rem;">
+                    📅 Last modified: {repo_info.get("last_modified", "Unknown")[:10] if repo_info.get("last_modified") else "Unknown"} | 
+                    📁 {repo_info.get("siblings", 0)} files | 
+                    ⬇️ {repo_info.get("downloads", 0)} downloads
+                </span>
+            </div>
+            ''', unsafe_allow_html=True)
+        else:
+            st.markdown('<span class="badge badge-success">🆕 New Repository (will be created)</span>', unsafe_allow_html=True)
+    
     st.divider()
     
-    # Upload options
+    # =========================================================================
+    # Model Card Section (NEW)
+    # =========================================================================
+    st.markdown('<h2 class="section-header">📋 Model Card Information</h2>', unsafe_allow_html=True)
+    st.caption("Fill in model metadata to generate a comprehensive README for your HuggingFace repository")
+    
+    # Initialize session state for model card fields
+    if 'model_card' not in st.session_state:
+        st.session_state.model_card = {}
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        model_description = st.text_area(
+            "📝 Model Description",
+            value=st.session_state.model_card.get('description', ''),
+            placeholder="Describe what this model does, its purpose, and capabilities...",
+            height=100,
+            help="A brief description of your fine-tuned model"
+        )
+        st.session_state.model_card['description'] = model_description
+        
+        license_options = [
+            "MIT", "Apache-2.0", "CC-BY-4.0", "CC-BY-SA-4.0", "CC-BY-NC-4.0",
+            "GPL-3.0", "BSD-3-Clause", "OpenRAIL", "Other"
+        ]
+        license_selected = st.selectbox(
+            "📄 License",
+            options=license_options,
+            index=license_options.index(st.session_state.model_card.get('license', 'MIT')) if st.session_state.model_card.get('license') in license_options else 0,
+            help="License for your model"
+        )
+        st.session_state.model_card['license'] = license_selected
+        
+        base_model = st.text_input(
+            "🏛️ Base Model",
+            value=st.session_state.model_card.get('base_model', config.model.name),
+            placeholder="e.g., meta-llama/Llama-3.2-1B",
+            help="The original model this was fine-tuned from"
+        )
+        st.session_state.model_card['base_model'] = base_model
+    
+    with col2:
+        tags_input = st.text_input(
+            "🏷️ Tags",
+            value=st.session_state.model_card.get('tags', ''),
+            placeholder="lora, fine-tuned, mlx, text-generation",
+            help="Comma-separated tags for discoverability"
+        )
+        st.session_state.model_card['tags'] = tags_input
+        
+        language_options = ["en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko", "ar", "ru", "nl", "multilingual", "other"]
+        language_selected = st.selectbox(
+            "🌐 Language",
+            options=language_options,
+            index=language_options.index(st.session_state.model_card.get('language', 'en')) if st.session_state.model_card.get('language') in language_options else 0,
+            help="Primary language of the model/training data"
+        )
+        st.session_state.model_card['language'] = language_selected
+        
+        task_types = [
+            "text-generation", "text2text-generation", "question-answering",
+            "summarization", "translation", "conversational", "text-classification", "other"
+        ]
+        task_selected = st.selectbox(
+            "🎯 Task Type",
+            options=task_types,
+            index=task_types.index(st.session_state.model_card.get('task', 'text-generation')) if st.session_state.model_card.get('task') in task_types else 0,
+            help="Primary task this model is designed for"
+        )
+        st.session_state.model_card['task'] = task_selected
+    
+    # Expandable advanced fields
+    with st.expander("📖 Additional Information (Optional)", expanded=False):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            training_data = st.text_area(
+                "📚 Training Data Description",
+                value=st.session_state.model_card.get('training_data', ''),
+                placeholder="Describe the dataset used for fine-tuning...",
+                height=80,
+                help="Information about your training dataset"
+            )
+            st.session_state.model_card['training_data'] = training_data
+            
+            intended_uses = st.text_area(
+                "✅ Intended Uses",
+                value=st.session_state.model_card.get('intended_uses', ''),
+                placeholder="What is this model intended to be used for?",
+                height=80,
+                help="Describe the intended use cases"
+            )
+            st.session_state.model_card['intended_uses'] = intended_uses
+        
+        with col2:
+            limitations = st.text_area(
+                "⚠️ Limitations & Biases",
+                value=st.session_state.model_card.get('limitations', ''),
+                placeholder="Known limitations, biases, or risks...",
+                height=80,
+                help="Important limitations users should know about"
+            )
+            st.session_state.model_card['limitations'] = limitations
+            
+            author = st.text_input(
+                "👤 Author / Organization",
+                value=st.session_state.model_card.get('author', ''),
+                placeholder="Your name or organization",
+                help="Who created this model"
+            )
+            st.session_state.model_card['author'] = author
+    
+    st.divider()
+    
+    # =========================================================================
+    # Training Configuration Summary (NEW)
+    # =========================================================================
+    st.markdown('<h2 class="section-header">⚙️ Training Configuration</h2>', unsafe_allow_html=True)
+    st.caption("This information will be included in your model card automatically")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("LoRA Rank", config.lora.rank)
+    with col2:
+        st.metric("LoRA Alpha", config.lora.alpha)
+    with col3:
+        st.metric("Batch Size", config.training.batch_size)
+    with col4:
+        st.metric("Learning Rate", f"{config.training.learning_rate:.1e}")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Epochs", config.training.num_epochs)
+    with col2:
+        st.metric("Warmup", config.training.warmup_steps)
+    with col3:
+        st.metric("Gradient Accum", config.training.gradient_accumulation_steps)
+    with col4:
+        # Display target modules if available
+        if hasattr(config.lora, 'target_modules') and config.lora.target_modules:
+            target_count = len(config.lora.target_modules)
+            st.metric("Target Modules", f"{target_count} layers")
+        else:
+            st.metric("Target Modules", "Auto")
+    
+    st.divider()
+    
+    # =========================================================================
+    # Configuration Files Section (NEW)
+    # =========================================================================
+    st.markdown('<h2 class="section-header">📦 Include Configuration Files</h2>', unsafe_allow_html=True)
+    st.caption("Optionally include configuration files with your model for reproducibility")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        include_training_config = st.checkbox(
+            "⚙️ training_config.json",
+            value=True,
+            help="Training hyperparameters (learning rate, batch size, epochs, etc.)"
+        )
+        include_lora_config = st.checkbox(
+            "🔧 lora_config.json",
+            value=True,
+            help="LoRA adapter settings (rank, alpha, target modules)"
+        )
+    
+    with col2:
+        include_data_config = st.checkbox(
+            "📚 data_config.json",
+            value=True,
+            help="Data paths and prompt template used for training"
+        )
+        include_full_config = st.checkbox(
+            "📋 full_config.yaml",
+            value=False,
+            help="Complete configuration file (all settings)"
+        )
+    
+    st.divider()
+    
+    # =========================================================================
+    # Upload Options
+    # =========================================================================
     st.markdown('<h2 class="section-header">📤 Upload Options</h2>', unsafe_allow_html=True)
     
     upload_type = st.radio(
@@ -2870,19 +3075,233 @@ def page_upload():
             st.warning("Checkpoints directory does not exist")
             path_to_upload = None
     
-    # Preview files
+    # Enhanced file preview with size aggregation
     if path_to_upload and path_to_upload.exists():
-        with st.expander("📄 Files to Upload"):
+        with st.expander("📄 Files to Upload", expanded=True):
             files = list(path_to_upload.glob("*"))
-            for f in files[:10]:
-                size_mb = f.stat().st_size / (1024 * 1024)
-                st.text(f"  {f.name} ({size_mb:.2f} MB)")
-            if len(files) > 10:
-                st.text(f"  ... and {len(files) - 10} more files")
+            total_size = sum(f.stat().st_size for f in files if f.is_file())
+            
+            # Show total size
+            if total_size > 1024 * 1024 * 1024:
+                size_str = f"{total_size / (1024**3):.2f} GB"
+            elif total_size > 1024 * 1024:
+                size_str = f"{total_size / (1024**2):.2f} MB"
+            else:
+                size_str = f"{total_size / 1024:.2f} KB"
+            
+            st.info(f"📦 **Total Size:** {size_str} | **Files:** {len(files)}")
+            
+            # Categorize files
+            weight_files = [f for f in files if f.suffix in ['.safetensors', '.bin', '.pt', '.npz']]
+            config_files = [f for f in files if f.suffix in ['.json', '.yaml', '.yml']]
+            other_files = [f for f in files if f not in weight_files and f not in config_files]
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**🧠 Weights**")
+                for f in weight_files[:5]:
+                    size_mb = f.stat().st_size / (1024 * 1024)
+                    st.text(f"  {f.name} ({size_mb:.1f} MB)")
+                if len(weight_files) > 5:
+                    st.text(f"  ... +{len(weight_files) - 5} more")
+                elif not weight_files:
+                    st.text("  None")
+            
+            with col2:
+                st.markdown("**⚙️ Configs**")
+                for f in config_files[:5]:
+                    size_kb = f.stat().st_size / 1024
+                    st.text(f"  {f.name} ({size_kb:.1f} KB)")
+                if len(config_files) > 5:
+                    st.text(f"  ... +{len(config_files) - 5} more")
+                elif not config_files:
+                    st.text("  None")
+            
+            with col3:
+                st.markdown("**📄 Other**")
+                for f in other_files[:5]:
+                    size_kb = f.stat().st_size / 1024
+                    st.text(f"  {f.name} ({size_kb:.1f} KB)")
+                if len(other_files) > 5:
+                    st.text(f"  ... +{len(other_files) - 5} more")
+                elif not other_files:
+                    st.text("  None")
     
     st.divider()
     
+    # =========================================================================
+    # README Generation (NEW)
+    # =========================================================================
+    st.markdown('<h2 class="section-header">📝 README Generation</h2>', unsafe_allow_html=True)
+    
+    # Initialize session state for AI-generated README
+    if 'ai_generated_readme' not in st.session_state:
+        st.session_state.ai_generated_readme = None
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        readme_mode = st.radio(
+            "Generation Method",
+            options=["📄 Template (instant)", "🤖 AI-powered (OpenRouter)"],
+            horizontal=True,
+            help="Choose how to generate the README"
+        )
+    
+    with col2:
+        if "AI-powered" in readme_mode:
+            if is_openrouter_configured():
+                st.markdown('<span class="badge badge-success">✅ OpenRouter configured</span>', unsafe_allow_html=True)
+            else:
+                st.markdown('<span class="badge badge-warning">⚠️ Add OPENROUTER_API_KEY to .env</span>', unsafe_allow_html=True)
+    
+    # Model selector for AI mode
+    selected_ai_model = None
+    if "AI-powered" in readme_mode:
+        openrouter_config = get_openrouter_config()
+        default_model = openrouter_config.get("model", "qwen/qwen3-0.6b-04-28")
+        
+        selected_ai_model = st.text_input(
+            "🧠 OpenRouter Model",
+            value=default_model,
+            placeholder="e.g. xiaomi/mimo-v2-flash:free",
+            help="Enter any OpenRouter model ID (e.g. anthropic/claude-3.5-sonnet, openai/gpt-4o-mini)"
+        )
+    
+    # Build template README (used for both modes as fallback/base)
+    tags_list = [t.strip() for t in tags_input.split(',') if t.strip()] if tags_input else ['lora', 'fine-tuned', 'mlx']
+    tags_yaml = '\n'.join([f'- {tag}' for tag in tags_list])
+    
+    template_readme = f'''---
+license: {license_selected.lower()}
+language:
+- {language_selected}
+base_model: {base_model}
+tags:
+{tags_yaml}
+pipeline_tag: {task_selected}
+---
+
+# {repo_id.split('/')[-1] if repo_id else 'Fine-tuned Model'}
+
+{model_description if model_description else 'A fine-tuned language model using LoRA adapters on MLX.'}
+
+## Model Details
+
+- **Base Model:** [{base_model}](https://huggingface.co/{base_model})
+- **Fine-tuning Method:** LoRA (Low-Rank Adaptation)
+- **Framework:** MLX (Apple Silicon optimized)
+- **License:** {license_selected}
+
+## Training Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| LoRA Rank | {config.lora.rank} |
+| LoRA Alpha | {config.lora.alpha} |
+| Batch Size | {config.training.batch_size} |
+| Learning Rate | {config.training.learning_rate} |
+| Epochs | {config.training.num_epochs} |
+| Warmup Steps | {config.training.warmup_steps} |
+| Gradient Accumulation | {config.training.gradient_accumulation_steps} |
+
+{f"## Training Data{chr(10)}{chr(10)}{training_data}" if training_data else ""}
+
+{f"## Intended Uses{chr(10)}{chr(10)}{intended_uses}" if intended_uses else ""}
+
+{f"## Limitations{chr(10)}{chr(10)}{limitations}" if limitations else ""}
+
+## Usage
+
+```python
+from mlx_lm import load, generate
+
+# Load with LoRA adapters
+model, tokenizer = load("{repo_id if repo_id else 'username/model-name'}", adapter_path="./adapters")
+
+# Generate text
+prompt = "Your prompt here"
+response = generate(model, tokenizer, prompt=prompt, max_tokens=256)
+print(response)
+```
+
+{f"---{chr(10)}{chr(10)}Created by {author}" if author else ""}
+'''
+    
+    # AI-powered generation
+    if "AI-powered" in readme_mode:
+        if st.button("🤖 Generate README with AI", use_container_width=True, disabled=not is_openrouter_configured()):
+            with st.spinner("Generating README with AI..."):
+                try:
+                    ai_prompt = f"""Generate a professional HuggingFace model card README in markdown format for this fine-tuned model.
+
+MODEL INFORMATION:
+- Base Model: {base_model}
+- Repository: {repo_id if repo_id else 'username/model-name'}
+- Task Type: {task_selected}
+- Language: {language_selected}
+- License: {license_selected}
+- Description: {model_description if model_description else 'A fine-tuned language model'}
+- Tags: {', '.join(tags_list)}
+
+TRAINING CONFIGURATION:
+- LoRA Rank: {config.lora.rank}
+- LoRA Alpha: {config.lora.alpha}
+- Batch Size: {config.training.batch_size}
+- Learning Rate: {config.training.learning_rate}
+- Epochs: {config.training.num_epochs}
+- Framework: MLX (Apple Silicon optimized)
+
+{f"Training Data: {training_data}" if training_data else ""}
+{f"Intended Uses: {intended_uses}" if intended_uses else ""}
+{f"Limitations: {limitations}" if limitations else ""}
+{f"Author: {author}" if author else ""}
+
+Generate a complete, professional README with:
+1. YAML frontmatter (license, language, base_model, tags, pipeline_tag)
+2. Title and description
+3. Model details section
+4. Training configuration table
+5. Usage example with Python code for mlx_lm
+6. Any relevant sections based on the provided info
+
+Make it engaging and informative for users discovering this model."""
+
+                    ai_readme = generate_with_openrouter(
+                        prompt=ai_prompt,
+                        model=selected_ai_model,
+                        max_tokens=1500,
+                        temperature=0.7
+                    )
+                    st.session_state.ai_generated_readme = ai_readme
+                    st.success("✅ README generated with AI!")
+                except Exception as e:
+                    st.error(f"❌ AI generation failed: {e}")
+                    st.session_state.ai_generated_readme = None
+        
+        # Show editable AI-generated README or placeholder
+        if st.session_state.ai_generated_readme:
+            readme_content = st.text_area(
+                "📖 AI-Generated README (editable)",
+                value=st.session_state.ai_generated_readme,
+                height=400,
+                help="Edit the AI-generated README before uploading"
+            )
+        else:
+            st.info("👆 Click the button above to generate README with AI")
+            readme_content = template_readme
+    else:
+        # Template mode - show preview
+        readme_content = template_readme
+        with st.expander("📖 README Preview", expanded=False):
+            st.code(readme_content, language="markdown")
+    
+    st.divider()
+    
+    # =========================================================================
     # Actions
+    # =========================================================================
     col1, col2 = st.columns(2)
     
     with col1:
@@ -2896,6 +3315,43 @@ def page_upload():
         ):
             with st.spinner("Uploading model..."):
                 try:
+                    # Save README to the upload path
+                    if path_to_upload and path_to_upload.exists() and readme_content:
+                        readme_path = path_to_upload / "README.md"
+                        with open(readme_path, 'w') as f:
+                            f.write(readme_content)
+                        st.info("📝 README.md added to upload")
+                    
+                    # Write configuration files if selected
+                    import json
+                    configs_added = []
+                    
+                    if include_training_config and path_to_upload and path_to_upload.exists():
+                        training_config_path = path_to_upload / "training_config.json"
+                        with open(training_config_path, 'w') as f:
+                            json.dump(config.training.to_dict(), f, indent=2)
+                        configs_added.append("training_config.json")
+                    
+                    if include_lora_config and path_to_upload and path_to_upload.exists():
+                        lora_config_path = path_to_upload / "lora_config.json"
+                        with open(lora_config_path, 'w') as f:
+                            json.dump(config.lora.to_dict(), f, indent=2)
+                        configs_added.append("lora_config.json")
+                    
+                    if include_data_config and path_to_upload and path_to_upload.exists():
+                        data_config_path = path_to_upload / "data_config.json"
+                        with open(data_config_path, 'w') as f:
+                            json.dump(config.data.to_dict(), f, indent=2)
+                        configs_added.append("data_config.json")
+                    
+                    if include_full_config and path_to_upload and path_to_upload.exists():
+                        full_config_path = path_to_upload / "full_config.yaml"
+                        config.to_yaml(str(full_config_path))
+                        configs_added.append("full_config.yaml")
+                    
+                    if configs_added:
+                        st.info(f"⚙️ Added config files: {', '.join(configs_added)}")
+                    
                     if upload_type == "Final Model":
                         url = upload_model(
                             model_path=str(path_to_upload),
