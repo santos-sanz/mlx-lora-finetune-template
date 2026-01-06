@@ -2564,24 +2564,83 @@ def render_training_metrics_panel():
         st.warning("⚠️ No checkpoints found. Train a model first!")
         return
     
+    # Try to load training logs
+    log_file = PROJECT_ROOT / "outputs" / "logs" / "training_log.jsonl"
+    training_logs = []
+    train_start_info = None
+    train_end_info = None
+    step_entries = []
+    eval_entries = []
+    epoch_entries = []
+    
+    if log_file.exists():
+        try:
+            with open(log_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        entry = json.loads(line)
+                        training_logs.append(entry)
+                        entry_type = entry.get("type", "")
+                        if entry_type == "train_start":
+                            train_start_info = entry
+                        elif entry_type == "train_end":
+                            train_end_info = entry
+                        elif entry_type == "step":
+                            step_entries.append(entry)
+                        elif entry_type == "eval":
+                            eval_entries.append(entry)
+                        elif entry_type == "epoch_end":
+                            epoch_entries.append(entry)
+        except Exception as e:
+            st.warning(f"Could not load training logs: {e}")
+    
+    has_logs = len(step_entries) > 0
+    
     col1, col2 = st.columns([2, 3])
     
     with col1:
         st.markdown("### ⚙️ Training Configuration")
         
-        st.markdown(f"""
-        | Parameter | Value |
-        |-----------|-------|
-        | **Model** | `{config.model.name}` |
-        | **LoRA Rank** | {config.lora.rank} |
-        | **LoRA Alpha** | {config.lora.alpha} |
-        | **Dropout** | {config.lora.dropout} |
-        | **Learning Rate** | {config.training.learning_rate:.2e} |
-        | **Batch Size** | {config.training.batch_size} |
-        | **Epochs** | {config.training.num_epochs} |
-        | **Warmup Steps** | {config.training.warmup_steps} |
-        | **Max Seq Length** | {config.model.max_seq_length} |
-        """)
+        # Show training config from logs if available, otherwise from current config
+        if train_start_info:
+            log_config = train_start_info.get("training_config", {})
+            log_lora = train_start_info.get("lora_config", {})
+            model_name = train_start_info.get("model_name", config.model.name)
+            
+            st.markdown(f"""
+            | Parameter | Value |
+            |-----------|-------|
+            | **Model** | `{model_name}` |
+            | **LoRA Rank** | {log_lora.get('rank', config.lora.rank)} |
+            | **LoRA Alpha** | {log_lora.get('alpha', config.lora.alpha)} |
+            | **Dropout** | {log_lora.get('dropout', config.lora.dropout)} |
+            | **Learning Rate** | {log_config.get('learning_rate', config.training.learning_rate):.2e} |
+            | **Batch Size** | {log_config.get('batch_size', config.training.batch_size)} |
+            | **Epochs** | {log_config.get('num_epochs', config.training.num_epochs)} |
+            | **Warmup Steps** | {log_config.get('warmup_steps', config.training.warmup_steps)} |
+            | **Max Seq Length** | {log_config.get('max_seq_length', config.model.max_seq_length)} |
+            """)
+            
+            # Show training data info
+            train_samples = train_start_info.get("train_samples", 0)
+            val_samples = train_start_info.get("val_samples", 0)
+            if train_samples or val_samples:
+                st.markdown(f"**📊 Data:** {train_samples} train / {val_samples} validation samples")
+        else:
+            st.markdown(f"""
+            | Parameter | Value |
+            |-----------|-------|
+            | **Model** | `{config.model.name}` |
+            | **LoRA Rank** | {config.lora.rank} |
+            | **LoRA Alpha** | {config.lora.alpha} |
+            | **Dropout** | {config.lora.dropout} |
+            | **Learning Rate** | {config.training.learning_rate:.2e} |
+            | **Batch Size** | {config.training.batch_size} |
+            | **Epochs** | {config.training.num_epochs} |
+            | **Warmup Steps** | {config.training.warmup_steps} |
+            | **Max Seq Length** | {config.model.max_seq_length} |
+            """)
         
         st.markdown("### 💾 Available Checkpoints")
         for cp in checkpoints:
@@ -2621,9 +2680,53 @@ def render_training_metrics_panel():
         else:
             st.info("💡 No training state file found. Run training to generate metrics.")
         
-        # Placeholder for loss curve (would need training logs)
+        # Loss Curve from training logs
         st.markdown("### 📉 Loss Curve")
-        st.info("💡 Loss curve visualization requires training log data. Run training with the built-in trainer to generate detailed logs.")
+        if has_logs:
+            import pandas as pd
+            
+            # Create dataframe for step losses
+            steps = [e["step"] for e in step_entries]
+            losses = [e["loss"] for e in step_entries]
+            
+            df_loss = pd.DataFrame({
+                "Step": steps,
+                "Training Loss": losses,
+            })
+            
+            # Add validation losses if available
+            if eval_entries:
+                eval_steps = [e["step"] for e in eval_entries]
+                eval_losses = [e["val_loss"] for e in eval_entries]
+                df_val = pd.DataFrame({
+                    "Step": eval_steps,
+                    "Validation Loss": eval_losses,
+                })
+                # Merge with training losses
+                df_loss = df_loss.merge(df_val, on="Step", how="outer").sort_values("Step")
+            
+            # Display loss chart
+            st.line_chart(df_loss.set_index("Step"))
+            
+            # Show epoch markers
+            if epoch_entries:
+                epoch_info = ", ".join([f"Epoch {e['epoch']+1}: step {e['global_step']}" for e in epoch_entries])
+                st.caption(f"📌 Epoch markers: {epoch_info}")
+        else:
+            st.info("💡 Loss curve visualization requires training log data. Run training with the built-in trainer to generate detailed logs.")
+        
+        # Learning Rate Curve
+        if has_logs:
+            st.markdown("### 📈 Learning Rate")
+            lr_steps = [e["step"] for e in step_entries]
+            lr_values = [e["learning_rate"] for e in step_entries]
+            
+            import pandas as pd
+            df_lr = pd.DataFrame({
+                "Step": lr_steps,
+                "Learning Rate": lr_values,
+            })
+            st.line_chart(df_lr.set_index("Step"))
         
         # Show checkpoint timeline
         st.markdown("### 🕐 Checkpoint Timeline")
@@ -2642,6 +2745,54 @@ def render_training_metrics_panel():
                 st.bar_chart(df.set_index("Checkpoint")["Step"])
         else:
             st.info("No step checkpoints found yet.")
+    
+    # Additional training details section
+    if has_logs:
+        with st.expander("📊 Detailed Training Metrics", expanded=False):
+            import pandas as pd
+            
+            # Create comprehensive metrics table
+            df_metrics = pd.DataFrame(step_entries)
+            cols_to_show = ["step", "epoch", "loss", "learning_rate", "tokens_per_second", "elapsed_time"]
+            available_cols = [c for c in cols_to_show if c in df_metrics.columns]
+            
+            if available_cols:
+                df_display = df_metrics[available_cols].copy()
+                df_display.columns = ["Step", "Epoch", "Loss", "Learning Rate", "Tokens/sec", "Time (s)"][:len(available_cols)]
+                
+                # Format numeric columns
+                if "Loss" in df_display.columns:
+                    df_display["Loss"] = df_display["Loss"].apply(lambda x: f"{x:.4f}")
+                if "Learning Rate" in df_display.columns:
+                    df_display["Learning Rate"] = df_display["Learning Rate"].apply(lambda x: f"{x:.2e}")
+                if "Time (s)" in df_display.columns:
+                    df_display["Time (s)"] = df_display["Time (s)"].apply(lambda x: f"{x:.1f}")
+                
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
+            
+            # Training summary
+            if train_end_info:
+                st.markdown("#### 🏁 Training Summary")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Steps", train_end_info.get("total_steps", "N/A"))
+                with col2:
+                    total_time = train_end_info.get("total_time", 0)
+                    if total_time:
+                        mins = int(total_time // 60)
+                        secs = int(total_time % 60)
+                        st.metric("Training Time", f"{mins}m {secs}s")
+                    else:
+                        st.metric("Training Time", "N/A")
+                with col3:
+                    final_loss = train_end_info.get("final_loss")
+                    st.metric("Final Loss", f"{final_loss:.4f}" if final_loss else "N/A")
+                with col4:
+                    best_val = train_end_info.get("best_val_loss")
+                    if best_val and best_val != float("inf"):
+                        st.metric("Best Val Loss", f"{best_val:.4f}")
+                    else:
+                        st.metric("Best Val Loss", "N/A")
 
 
 def render_batch_testing_panel():
@@ -2778,19 +2929,19 @@ def render_batch_testing_panel():
 def page_testing():
     """Render model testing page with three panels."""
     st.markdown('<h1 class="main-title">🧪 Model Testing</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">Compare base vs fine-tuned model • Visualize training metrics • Batch testing</p>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Compare base vs fine-tuned model • Batch testing • Visualize training metrics</p>', unsafe_allow_html=True)
     
-    # Three tabs for the panels
-    tab1, tab2, tab3 = st.tabs(["💬 Chat Comparison", "📈 Training Metrics", "📋 Batch Testing"])
+    # Three tabs for the panels - Training Metrics is now the third tab
+    tab1, tab2, tab3 = st.tabs(["💬 Chat Comparison", "📋 Batch Testing", "📈 Training Metrics"])
     
     with tab1:
         render_chat_comparison_panel()
     
     with tab2:
-        render_training_metrics_panel()
+        render_batch_testing_panel()
     
     with tab3:
-        render_batch_testing_panel()
+        render_training_metrics_panel()
 
 
 # ============================================================================

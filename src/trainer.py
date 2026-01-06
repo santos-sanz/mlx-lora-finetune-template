@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Callable, Union
 from dataclasses import dataclass
 import json
+from datetime import datetime
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -47,6 +48,8 @@ class LoRATrainer:
         logging_steps: int = 10,
         output_dir: Union[str, Path] = "outputs",
         callbacks: Optional[Dict[str, Callable]] = None,
+        model_name: Optional[str] = None,
+        lora_config: Optional[Dict[str, Any]] = None,
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -68,7 +71,16 @@ class LoRATrainer:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Setup logs directory
+        self.logs_dir = self.output_dir / "logs"
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.log_file = self.logs_dir / "training_log.jsonl"
+        
         self.callbacks = callbacks or {}
+        
+        # Model info for logging
+        self.model_name = model_name
+        self.lora_config = lora_config or {}
         
         # Training state
         self.global_step = 0
@@ -132,6 +144,24 @@ class LoRATrainer:
         if self.val_data:
             print(f"Validation samples: {len(self.val_data)}")
         
+        # Log training start with model info
+        self._write_log_entry({
+            "type": "train_start",
+            "model_name": self.model_name,
+            "lora_config": self.lora_config,
+            "training_config": {
+                "learning_rate": self.learning_rate,
+                "batch_size": self.batch_size,
+                "num_epochs": self.num_epochs,
+                "warmup_steps": self.warmup_steps,
+                "weight_decay": self.weight_decay,
+                "max_seq_length": self.max_seq_length,
+                "gradient_accumulation_steps": self.gradient_accumulation_steps,
+            },
+            "train_samples": len(self.train_data),
+            "val_samples": len(self.val_data) if self.val_data else 0,
+        })
+        
         # Setup optimizer
         optimizer = optim.AdamW(
             learning_rate=self.learning_rate,
@@ -189,6 +219,15 @@ class LoRATrainer:
                     val_loss = self._evaluate()
                     print(f"Step {self.global_step} - Validation loss: {val_loss:.4f}")
                     
+                    # Log validation result
+                    self._write_log_entry({
+                        "type": "eval",
+                        "step": self.global_step,
+                        "epoch": epoch,
+                        "val_loss": val_loss,
+                        "elapsed_time": time.time() - start_time,
+                    })
+                    
                     if val_loss < self.best_val_loss:
                         self.best_val_loss = val_loss
                         self._save_checkpoint("best")
@@ -199,6 +238,15 @@ class LoRATrainer:
             
             avg_epoch_loss = epoch_loss / num_batches if num_batches > 0 else 0
             print(f"Epoch {epoch + 1}/{self.num_epochs} - Average loss: {avg_epoch_loss:.4f}")
+            
+            # Log epoch end
+            self._write_log_entry({
+                "type": "epoch_end",
+                "epoch": epoch,
+                "avg_loss": avg_epoch_loss,
+                "global_step": self.global_step,
+                "elapsed_time": time.time() - start_time,
+            })
         
         # Save final model
         self._save_checkpoint("final")
@@ -210,6 +258,15 @@ class LoRATrainer:
             "final_loss": avg_epoch_loss,
             "best_val_loss": self.best_val_loss if self.val_data else None,
         }
+        
+        # Log training end
+        self._write_log_entry({
+            "type": "train_end",
+            "total_steps": self.global_step,
+            "total_time": total_time,
+            "final_loss": avg_epoch_loss,
+            "best_val_loss": self.best_val_loss if self.val_data else None,
+        })
         
         print(f"Training complete in {total_time:.2f}s")
         return stats
@@ -231,14 +288,33 @@ class LoRATrainer:
     
     def _log_metrics(self, metrics: TrainingMetrics):
         """Log training metrics."""
-        self.training_log.append({
+        log_entry = {
             "step": metrics.step,
             "loss": metrics.loss,
             "lr": metrics.learning_rate,
             "tps": metrics.tokens_per_second,
             "time": metrics.elapsed_time,
+        }
+        self.training_log.append(log_entry)
+        
+        # Write step entry to log file
+        self._write_log_entry({
+            "type": "step",
+            "step": metrics.step,
+            "epoch": self.epoch,
+            "loss": metrics.loss,
+            "learning_rate": metrics.learning_rate,
+            "tokens_per_second": metrics.tokens_per_second,
+            "elapsed_time": metrics.elapsed_time,
         })
+        
         print(f"Step {metrics.step} - Loss: {metrics.loss:.4f}, LR: {metrics.learning_rate:.2e}")
+    
+    def _write_log_entry(self, entry: Dict[str, Any]):
+        """Write a log entry to the training log file."""
+        entry["timestamp"] = datetime.now().isoformat()
+        with open(self.log_file, "a") as f:
+            f.write(json.dumps(entry) + "\n")
     
     def _save_checkpoint(self, name: str):
         """Save a training checkpoint."""
