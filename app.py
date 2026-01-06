@@ -906,13 +906,17 @@ def count_files(directory: Path, pattern: str = "*") -> int:
 # ============================================================================
 
 def page_home():
-    """Render home/dashboard page."""
+    """Render comprehensive home/dashboard page for both novice and expert users."""
     st.markdown('<h1 class="main-title">🚀 MLX LoRA Fine-tuning</h1>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">Fine-tune LLM models with LoRA on Apple Silicon • Powered by MLX</p>', unsafe_allow_html=True)
     
     config = st.session_state.config
     
-    # Status metrics in cards
+    # ========================================================================
+    # SECTION 1: System Status Dashboard
+    # ========================================================================
+    st.markdown('<h2 class="section-header">📊 System Status</h2>', unsafe_allow_html=True)
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -920,15 +924,17 @@ def page_home():
         st.metric(
             label="🔑 HuggingFace Token",
             value="Connected" if hf_token else "Not Set",
-            delta="Ready" if hf_token else "Required"
+            delta="✓ Ready" if hf_token else "⚠ Required"
         )
     
     with col2:
         train_exists = Path(config.data.train_file).exists()
+        valid_exists = Path(config.data.valid_file).exists()
+        data_status = "Ready" if (train_exists and valid_exists) else "Missing" if not train_exists else "Train only"
         st.metric(
             label="📊 Training Data",
-            value="Ready" if train_exists else "Missing",
-            delta="OK" if train_exists else "Setup needed"
+            value=data_status,
+            delta="✓ OK" if train_exists else "Setup needed"
         )
     
     with col3:
@@ -936,21 +942,138 @@ def page_home():
         st.metric(
             label="💾 Checkpoints",
             value=str(checkpoints),
-            delta="saved" if checkpoints else "none yet"
+            delta=f"{checkpoints} saved" if checkpoints else "none yet"
         )
     
     with col4:
         adapters = count_files(Path(config.output.adapters_dir), "*.safetensors")
         st.metric(
-            label="🎯 Adapters",
+            label="🎯 LoRA Adapters",
             value=str(adapters),
-            delta="trained" if adapters else "none yet"
+            delta=f"{adapters} trained" if adapters else "none yet"
         )
     
     st.divider()
     
-    # Feature cards
-    st.markdown('<h2 class="section-header">✨ Features</h2>', unsafe_allow_html=True)
+    # ========================================================================
+    # SECTION 2: How It Works - Workflow Guide
+    # ========================================================================
+    st.markdown('<h2 class="section-header">🎯 How It Works — Step-by-Step Guide</h2>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, rgba(255, 107, 107, 0.1) 0%, rgba(255, 142, 83, 0.1) 100%); 
+                border-radius: 16px; padding: 24px; margin-bottom: 24px; border: 1px solid rgba(255, 142, 83, 0.2);">
+        <p style="margin: 0; font-size: 1.05rem; line-height: 1.7;">
+            <strong>Fine-tuning</strong> is the process of taking a pre-trained language model (like Qwen, Llama, or SmolLM) 
+            and specializing it for a specific task using your own data. 
+            <strong>LoRA (Low-Rank Adaptation)</strong> is an efficient technique that only trains a small part of the model, 
+            saving memory and time.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Visual workflow with 4 steps
+    step_cols = st.columns(4)
+    
+    workflow_steps = [
+        {
+            "icon": "📄",
+            "title": "1. Prepare Data",
+            "desc": "Convert your texts, JSONs, or transcripts into training format",
+            "page": "data",
+            "done": Path(config.data.train_file).exists()
+        },
+        {
+            "icon": "⚙️",
+            "title": "2. Configure",
+            "desc": "Choose base model, LoRA parameters, and training settings",
+            "page": "config",
+            "done": True  # Config always exists
+        },
+        {
+            "icon": "🚀",
+            "title": "3. Train",
+            "desc": "Start fine-tuning from terminal and monitor progress",
+            "page": "train",
+            "done": adapters > 0
+        },
+        {
+            "icon": "☁️",
+            "title": "4. Share",
+            "desc": "Upload your model to HuggingFace Hub or test it locally",
+            "page": "upload",
+            "done": False  # Can always upload more
+        }
+    ]
+    
+    for i, (col, step) in enumerate(zip(step_cols, workflow_steps)):
+        with col:
+            status_indicator = "✅" if step["done"] else "⭕"
+            st.markdown(f"""
+            <div class="feature-card" style="text-align: center; min-height: 180px;">
+                <div style="font-size: 2.5rem; margin-bottom: 12px;">{step["icon"]}</div>
+                <div class="feature-title" style="font-size: 1rem;">{status_indicator} {step["title"]}</div>
+                <div class="feature-desc" style="font-size: 0.9rem;">{step["desc"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    st.divider()
+    
+    # ========================================================================
+    # SECTION 3: Quick Start Checklist
+    # ========================================================================
+    st.markdown('<h2 class="section-header">✅ Getting Started Checklist</h2>', unsafe_allow_html=True)
+    
+    col_check, col_action = st.columns([3, 1])
+    
+    with col_check:
+        # Check 1: HF Token
+        hf_status = "✅" if hf_token else "❌"
+        st.markdown(f"""
+        **{hf_status} HuggingFace Token configured**
+        {"— You can access private models and upload your results" if hf_token else "— Required to download models and upload results. Add `HF_TOKEN=your_token` in the `.env` file"}
+        """)
+        
+        # Check 2: Training data
+        data_status = "✅" if train_exists else "❌"
+        st.markdown(f"""
+        **{data_status} Training data prepared**
+        {"— train.jsonl and valid.jsonl files ready" if train_exists else "— Go to 'Prepare Data' section to create your training files"}
+        """)
+        
+        # Check 3: Model selected
+        model_status = "✅" if config.model.name else "⚠️"
+        st.markdown(f"""
+        **{model_status} Base model selected:** `{config.model.name}`
+        """)
+        
+        # Check 4: Ready to train
+        ready_to_train = hf_token and train_exists and config.model.name
+        ready_status = "✅" if ready_to_train else "⏳"
+        st.markdown(f"""
+        **{ready_status} Ready to train**
+        {"— All set! You can start training" if ready_to_train else "— Complete the steps above first"}
+        """)
+    
+    with col_action:
+        st.markdown("#### Actions")
+        if not hf_token:
+            st.info("Edit `.env` with your token")
+        if not train_exists:
+            if st.button("📊 Prepare Data", key="prep_data_btn"):
+                st.session_state.page = "data"
+                st.rerun()
+        if ready_to_train:
+            if st.button("🚀 Train", key="train_btn", type="primary"):
+                st.session_state.page = "train"
+                st.rerun()
+    
+    st.divider()
+    
+    # ========================================================================
+    # SECTION 4: Feature Overview
+    # ========================================================================
+    st.markdown('<h2 class="section-header">✨ Key Features</h2>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     
@@ -959,7 +1082,12 @@ def page_home():
         <div class="feature-card">
             <div class="feature-icon">📊</div>
             <div class="feature-title">Data Preparation</div>
-            <div class="feature-desc">Convert your datasets to MLX format with automatic train/validation splits and customizable templates.</div>
+            <div class="feature-desc">
+                • Convert JSON, JSONL, plain text, or entire folders<br>
+                • AI-powered Q&A generation (OpenRouter or local)<br>
+                • Automatic train/validation split<br>
+                • Clean timestamps, URLs, speaker labels
+            </div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -968,68 +1096,251 @@ def page_home():
         <div class="feature-card">
             <div class="feature-icon">🚀</div>
             <div class="feature-title">LoRA Training</div>
-            <div class="feature-desc">Fine-tune models efficiently with Low-Rank Adaptation. Full control over hyperparameters and real-time logs.</div>
+            <div class="feature-desc">
+                • Simple mode with presets (Quick/Balanced/Quality)<br>
+                • Advanced mode with full control<br>
+                • Real-time logs<br>
+                • Automatic checkpoints<br>
+                • Optimized for Apple Silicon (M1/M2/M3/M4)
+            </div>
         </div>
         """, unsafe_allow_html=True)
     
     with col3:
         st.markdown("""
         <div class="feature-card">
-            <div class="feature-icon">☁️</div>
-            <div class="feature-title">HuggingFace Hub</div>
-            <div class="feature-desc">Seamlessly upload your trained models and checkpoints to the HuggingFace Hub for sharing.</div>
+            <div class="feature-icon">🧪</div>
+            <div class="feature-title">Testing & Publishing</div>
+            <div class="feature-desc">
+                • Compare base vs fine-tuned model<br>
+                • Interactive chat with your model<br>
+                • Training metrics visualization<br>
+                • Direct upload to HuggingFace Hub
+            </div>
         </div>
         """, unsafe_allow_html=True)
     
     st.divider()
     
-    # Current configuration
-    col1, col2 = st.columns(2)
+    # ========================================================================
+    # SECTION 5: Expert Details (Expandable)
+    # ========================================================================
+    st.markdown('<h2 class="section-header">🔧 Technical Details</h2>', unsafe_allow_html=True)
     
-    with col1:
-        st.markdown('<h2 class="section-header">⚙️ Current Configuration</h2>', unsafe_allow_html=True)
+    with st.expander("⚙️ Current Configuration", expanded=False):
+        col1, col2 = st.columns(2)
         
-        config_data = {
-            "Model": config.model.name,
-            "LoRA Rank": config.lora.rank,
-            "LoRA Alpha": config.lora.alpha,
-            "Batch Size": config.training.batch_size,
-            "Learning Rate": f"{config.training.learning_rate:.0e}",
-            "Epochs": config.training.num_epochs,
-        }
+        with col1:
+            st.markdown("##### Model")
+            st.code(f"""
+Model: {config.model.name}
+Tokenizer: {config.model.tokenizer or config.model.name}
+Max Seq Length: {config.model.max_seq_length}
+            """, language="yaml")
+            
+            st.markdown("##### LoRA")
+            st.code(f"""
+Rank: {config.lora.rank}
+Alpha: {config.lora.alpha}
+Dropout: {config.lora.dropout}
+Target Modules: {', '.join(config.lora.target_modules[:3])}{'...' if len(config.lora.target_modules) > 3 else ''}
+            """, language="yaml")
         
-        for key, value in config_data.items():
-            st.markdown(f"**{key}:** `{value}`")
+        with col2:
+            st.markdown("##### Training")
+            st.code(f"""
+Learning Rate: {config.training.learning_rate}
+Batch Size: {config.training.batch_size}
+Epochs: {config.training.num_epochs}
+Gradient Accumulation: {config.training.gradient_accumulation_steps}
+Warmup Steps: {config.training.warmup_steps}
+            """, language="yaml")
+            
+            st.markdown("##### Data")
+            st.code(f"""
+Train: {config.data.train_file}
+Valid: {config.data.valid_file}
+            """, language="yaml")
     
-    with col2:
-        st.markdown('<h2 class="section-header">📁 Project Structure</h2>', unsafe_allow_html=True)
+    with st.expander("📁 Project Structure", expanded=False):
         st.code("""
+mlx-lora-finetune-template/
+├── app.py                 # 🎨 This Streamlit application
+├── configs/
+│   ├── current.yaml       # Your current configuration
+│   └── default.yaml       # Default configuration
 ├── data/
-│   ├── raw/          # Raw datasets
-│   └── processed/    # train.jsonl, valid.jsonl
+│   ├── raw/               # Original data (JSON, TXT, etc.)
+│   └── processed/         # train.jsonl and valid.jsonl files
 ├── outputs/
-│   ├── adapters/     # LoRA weights
-│   ├── checkpoints/  # Training checkpoints
-│   └── logs/         # Training logs
-└── configs/          # YAML configurations
+│   ├── adapters/          # Final LoRA weights (.safetensors)
+│   ├── checkpoints/       # Training checkpoints
+│   └── logs/              # Logs and metrics
+├── src/                   # Source code
+│   ├── config.py          # Configuration classes
+│   ├── data_utils.py      # Data utilities
+│   ├── hf_utils.py        # HuggingFace integration
+│   └── trainer.py         # Training engine
+└── scripts/               # Alternative CLI scripts
         """, language="text")
     
-    # Quick actions
+    with st.expander("💻 Alternative CLI Commands", expanded=False):
+        st.markdown("""
+        If you prefer using the terminal instead of the UI, here are the main commands:
+        """)
+        
+        st.markdown("**1. Prepare data:**")
+        st.code("""
+python scripts/prepare_data.py \\
+    --input data/raw/your_dataset.json \\
+    --output data/processed \\
+    --val-split 0.1
+        """, language="bash")
+        
+        st.markdown("**2. Train model:**")
+        st.code("""
+# Using make (recommended)
+make train-current
+
+# Or directly with Python
+python scripts/train.py --config configs/current.yaml
+        """, language="bash")
+        
+        st.markdown("**3. Upload to HuggingFace:**")
+        st.code("""
+python scripts/upload_to_hf.py --model outputs/adapters/final
+        """, language="bash")
+    
+    with st.expander("🍎 Recommended Models for Apple Silicon", expanded=False):
+        st.markdown("""
+        | Model | Size | Min RAM | Best For |
+        |-------|------|---------|----------|
+        | `HuggingFaceTB/SmolLM2-135M` | 135M | ~1GB | Ultra-fast testing |
+        | `HuggingFaceTB/SmolLM2-360M` | 360M | ~2GB | Efficient tasks |
+        | `Qwen/Qwen2.5-0.5B-Instruct` | 0.5B | ~2GB | Instructions |
+        | `Qwen/Qwen3-0.6B` | 0.6B | ~2GB | Quality/speed balance |
+        | `meta-llama/Llama-3.2-1B` | 1B | ~4GB | General purpose |
+        | `meta-llama/Llama-3.2-3B` | 3B | ~8GB | High quality |
+        
+        💡 **Tip**: Start with small models (< 1B) to iterate quickly. 
+        Fine-tuning SmolLM2-135M takes only minutes.
+        """)
+    
     st.divider()
+    
+    # ========================================================================
+    # SECTION 6: FAQ & Troubleshooting
+    # ========================================================================
+    st.markdown('<h2 class="section-header">❓ Frequently Asked Questions</h2>', unsafe_allow_html=True)
+    
+    with st.expander("What is LoRA and why use it?"):
+        st.markdown("""
+        **LoRA (Low-Rank Adaptation)** is a technique that allows fine-tuning large models 
+        efficiently. Instead of modifying all the original model parameters 
+        (which can be billions), LoRA only adds and trains small additional matrices.
+        
+        **Advantages:**
+        - ✅ Uses 10-100x less memory than full fine-tuning
+        - ✅ Much faster training
+        - ✅ Original model remains unchanged
+        - ✅ Adapters are small (MBs vs GBs)
+        - ✅ You can have multiple adapters for different tasks
+        """)
+    
+    with st.expander("What format should my data be in?"):
+        st.markdown("""
+        The most common format is **JSON/JSONL with instruction-response pairs**:
+        
+        ```json
+        {"instruction": "What is Python?", "response": "Python is a programming language..."}
+        {"instruction": "Explain LoRA", "response": "LoRA is an adaptation technique..."}
+        ```
+        
+        You can also use:
+        - **Plain text** (.txt, .md): The app will convert it automatically
+        - **Folders**: Process all text files in a folder
+        - **AI generation**: Use OpenRouter or a local model to create Q&A
+        """)
+    
+    with st.expander("How much data do I need?"):
+        st.markdown("""
+        Depends on your use case:
+        
+        | Amount | Expected Result |
+        |--------|----------------|
+        | 50-100 examples | Basic tests, see if it works |
+        | 200-500 examples | Reasonable results for simple tasks |
+        | 1,000+ examples | Good results for most tasks |
+        | 5,000+ examples | Excellent quality and generalization |
+        
+        💡 **Tip**: **Quality** matters more than quantity. 
+        100 well-written examples > 1000 noisy examples.
+        """)
+    
+    with st.expander("Why does training run from the terminal?"):
+        st.markdown("""
+        Training runs from the terminal for several technical reasons:
+        
+        1. **Stability**: Long processes are more stable outside the browser
+        2. **Real-time logs**: Better progress visualization
+        3. **Control**: You can pause (Ctrl+C) and monitor resource usage
+        4. **Resources**: Jupyter/Streamlit have additional overhead
+        
+        **How to do it:**
+        1. Configure everything in this UI
+        2. Save the configuration (creates `configs/current.yaml`)
+        3. Open a terminal in the project folder
+        4. Run: `make train-current` or `python scripts/train.py --config configs/current.yaml`
+        """)
+    
+    with st.expander("How long does training take?"):
+        st.markdown("""
+        Depends on model, data, and hardware:
+        
+        | Model | Data | Hardware | Approx. Time |
+        |-------|------|----------|-------------|
+        | SmolLM2-135M | 200 examples | M1 8GB | 2-5 minutes |
+        | Qwen3-0.6B | 500 examples | M1 Pro 16GB | 10-20 minutes |
+        | Llama-3.2-1B | 1000 examples | M2 Max 32GB | 30-60 minutes |
+        | Llama-3.2-3B | 2000 examples | M3 Max 64GB | 2-4 hours |
+        
+        💡 **Tips to speed up:**
+        - Use larger batch_size if you have enough RAM
+        - Reduce epochs for initial tests
+        - Use gradient_accumulation if you have limited memory
+        """)
+    
+    st.divider()
+    
+    # ========================================================================
+    # SECTION 7: Quick Actions
+    # ========================================================================
     st.markdown('<h2 class="section-header">⚡ Quick Actions</h2>', unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
+    
     with col1:
-        if st.button("📊 Prepare Data", width="stretch"):
+        st.markdown("**Step 1**")
+        if st.button("📊 Prepare Data", key="qa_data", use_container_width=True):
             st.session_state.page = "data"
             st.rerun()
+    
     with col2:
-        if st.button("🚀 Train Model", width="stretch"):
+        st.markdown("**Step 2**")
+        if st.button("⚙️ Configure", key="qa_config", use_container_width=True):
+            st.session_state.page = "config"
+            st.rerun()
+    
+    with col3:
+        st.markdown("**Step 3**")
+        if st.button("🚀 Training", key="qa_train", use_container_width=True):
             st.session_state.page = "train"
             st.rerun()
-    with col3:
-        if st.button("☁️ Upload to HuggingFace", width="stretch"):
-            st.session_state.page = "upload"
+    
+    with col4:
+        st.markdown("**Step 4**")
+        if st.button("🧪 Test Model", key="qa_test", use_container_width=True):
+            st.session_state.page = "test"
             st.rerun()
 
 
@@ -1888,15 +2199,14 @@ def render_simple_mode(config):
     # Suggestions
     with st.expander("💡 Recommended Models for Apple Silicon"):
         st.markdown("""
-        | Model | Size | RAM | Best For |
-        |-------|------|-----|----------|
-        | `HuggingFaceTB/SmolLM2-135M` | 135M | ~1GB | Ultra-fast research, testing |
-        | `HuggingFaceTB/SmolLM2-360M` | 360M | ~2GB | Efficient on-device tasks |
-        | `Qwen/Qwen2.5-0.5B-Instruct` | 0.5B | ~2GB | High instruction-following |
-        | `h2oai/h2o-danube3-500m-base`| 500M | ~2GB | Balanced SLM experimentation |
-        | `meta-llama/Llama-3.2-1B` | 1B | 4GB | Fast testing, quick iterations |
-        | `meta-llama/Llama-3.2-3B` | 3B | 8GB | Balanced quality and speed |
-        | `Qwen/Qwen2.5-7B` | 7B | 16GB+ | High quality production |
+        For Apple Silicon, we recommend using **small language models (< 6B parameters)** for efficient training.
+        
+        👉 **[Browse Trending Text Generation Models (< 6B)](https://huggingface.co/models?pipeline_tag=text-generation&num_parameters=min:0,max:6B&sort=trending)**
+        
+        💡 **Tips:**
+        - Start with models under 1B for fast iteration
+        - Models like SmolLM2, Qwen, and Llama 3.2 work great
+        - Check the model's memory requirements before training
         """)
     
     st.divider()

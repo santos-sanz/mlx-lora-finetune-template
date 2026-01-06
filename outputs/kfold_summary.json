@@ -1,0 +1,57 @@
+{
+  "k": 5,
+  "total_time": 738.5966510772705,
+  "avg_final_loss": 2.604302350371726,
+  "std_final_loss": 0.004285924106263814,
+  "avg_val_loss": 2.437335179221462,
+  "std_val_loss": 0.019992784770871762,
+  "best_fold": 4,
+  "best_val_loss": 2.4132762962663676,
+  "fold_results": [
+    {
+      "total_steps": 282,
+      "total_time": 144.4041850566864,
+      "final_loss": 2.6036617764344454,
+      "best_val_loss": 2.4359069273505414,
+      "fold": 0,
+      "train_samples": 564,
+      "val_samples": 142
+    },
+    {
+      "total_steps": 283,
+      "total_time": 144.39162397384644,
+      "final_loss": 2.597608352718421,
+      "best_val_loss": 2.4483450886229394,
+      "fold": 1,
+      "train_samples": 565,
+      "val_samples": 141
+    },
+    {
+      "total_steps": 283,
+      "total_time": 146.43838715553284,
+      "final_loss": 2.6051814265470203,
+      "best_val_loss": 2.420164015931143,
+      "fold": 2,
+      "train_samples": 565,
+      "val_samples": 141
+    },
+    {
+      "total_steps": 283,
+      "total_time": 143.58392596244812,
+      "final_loss": 2.603993411620177,
+      "best_val_loss": 2.46898356793632,
+      "fold": 3,
+      "train_samples": 565,
+      "val_samples": 141
+    },
+    {
+      "total_steps": 283,
+      "total_time": 147.80033993721008,
+      "final_loss": 2.6110667845385658,
+      "best_val_loss": 2.4132762962663676,
+      "fold": 4,
+      "train_samples": 565,
+      "val_samples": 141
+    }
+  ]
+}

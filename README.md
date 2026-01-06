@@ -176,15 +176,14 @@ pytest tests/ --cov=src --cov-report=html
 
 We recommend starting with **Small Language Models (SLMs)**. They are incredibly efficient, allow for very fast iteration cycles, and can be fine-tuned on standard MacBooks without high memory pressure.
 
-| Model | Size | RAM Required | Best For |
-|-------|------|--------------|----------|
-| `HuggingFaceTB/SmolLM2-135M` | 135M | ~1GB | Ultra-fast research & testing |
-| `HuggingFaceTB/SmolLM2-360M` | 360M | ~2GB | Efficient on-device tasks |
-| `Qwen/Qwen2.5-0.5B-Instruct` | 0.5B | ~2GB | Instruction-following research |
-| `h2oai/h2o-danube3-500m-base`| 500M | ~2GB | Good all-rounder SLM |
-| `meta-llama/Llama-3.2-1B` | 1B | 4GB+ | General purpose small model |
-| `meta-llama/Llama-3.2-3B` | 3B | 8GB+ | High quality / Speed balance |
-| `Qwen/Qwen2.5-7B` | 7B | 16GB+ | Production use cases |
+For Apple Silicon, we recommend using **small language models (< 6B parameters)** for efficient training.
+
+👉 **[Browse Trending Text Generation Models (< 6B)](https://huggingface.co/models?pipeline_tag=text-generation&num_parameters=min:0,max:6B&sort=trending)**
+
+**Tips:**
+- Start with models under 1B for fast iteration
+- Models like SmolLM2, Qwen, and Llama 3.2 work great
+- Check the model's memory requirements before training
 
 ### 🧠 Why Tiny Models (SLMs)?
 Using models under 1B parameters is highly recommended for:
