@@ -126,12 +126,20 @@ class DataConfig:
     valid_file: str = "data/processed/valid.jsonl"
     prompt_template: Optional[str] = None
     
+    # K-Fold Cross-Validation settings
+    training_method: str = "basic"  # "basic" or "kfold"
+    kfold_splits: int = 5  # Number of folds (3-10)
+    kfold_seed: int = 42  # Seed for reproducibility
+    
     def to_dict(self) -> dict:
         """Convert config to dictionary."""
         return {
             "train_file": self.train_file,
             "valid_file": self.valid_file,
             "prompt_template": self.prompt_template,
+            "training_method": self.training_method,
+            "kfold_splits": self.kfold_splits,
+            "kfold_seed": self.kfold_seed,
         }
 
 

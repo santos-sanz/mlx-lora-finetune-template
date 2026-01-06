@@ -71,6 +71,87 @@ def create_train_val_split(
     return data[:split_idx], data[split_idx:]
 
 
+def create_kfold_splits(
+    data: List[Dict[str, Any]],
+    k: int = 5,
+    seed: int = 42,
+    shuffle: bool = True,
+) -> List[Tuple[List[int], List[int]]]:
+    """
+    Create k-fold cross-validation splits.
+    
+    Args:
+        data: The dataset to split
+        k: Number of folds (must be >= 2)
+        seed: Random seed for reproducibility
+        shuffle: Whether to shuffle data before splitting
+        
+    Returns:
+        List of k tuples, each containing (train_indices, val_indices)
+    """
+    if k < 2:
+        raise ValueError(f"k must be >= 2, got {k}")
+    
+    n_samples = len(data)
+    if n_samples < k:
+        raise ValueError(f"Cannot create {k} folds with only {n_samples} samples")
+    
+    # Create indices
+    indices = list(range(n_samples))
+    
+    if shuffle:
+        random.seed(seed)
+        random.shuffle(indices)
+    
+    # Calculate fold sizes
+    fold_size = n_samples // k
+    remainder = n_samples % k
+    
+    # Create folds
+    folds = []
+    start = 0
+    for i in range(k):
+        # Distribute remainder across first folds
+        current_fold_size = fold_size + (1 if i < remainder else 0)
+        end = start + current_fold_size
+        folds.append(indices[start:end])
+        start = end
+    
+    # Create train/val splits for each fold
+    splits = []
+    for i in range(k):
+        val_indices = folds[i]
+        train_indices = []
+        for j in range(k):
+            if j != i:
+                train_indices.extend(folds[j])
+        splits.append((train_indices, val_indices))
+    
+    return splits
+
+
+def get_kfold_data(
+    data: List[Dict[str, Any]],
+    splits: List[Tuple[List[int], List[int]]],
+    fold_idx: int,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Get train and validation data for a specific fold.
+    
+    Args:
+        data: The full dataset
+        splits: K-fold splits from create_kfold_splits
+        fold_idx: Which fold to get (0-indexed)
+        
+    Returns:
+        Tuple of (train_data, val_data) for the specified fold
+    """
+    train_indices, val_indices = splits[fold_idx]
+    train_data = [data[i] for i in train_indices]
+    val_data = [data[i] for i in val_indices]
+    return train_data, val_data
+
+
 def save_jsonl(data: List[Dict[str, Any]], path: Union[str, Path]) -> None:
     """Save data to JSONL file."""
     path = Path(path)

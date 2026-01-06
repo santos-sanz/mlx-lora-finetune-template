@@ -367,3 +367,278 @@ class LoRATrainer:
         self.best_val_loss = state["best_val_loss"]
         
         print(f"Loaded checkpoint from {checkpoint_path}")
+
+
+class KFoldTrainer:
+    """
+    K-Fold Cross-Validation trainer for LoRA fine-tuning.
+    
+    Trains multiple models on different data splits and aggregates results.
+    """
+    
+    def __init__(
+        self,
+        model_loader: Callable,
+        tokenizer: Any,
+        full_data: list,
+        k: int = 5,
+        seed: int = 42,
+        learning_rate: float = 1e-4,
+        batch_size: int = 4,
+        num_epochs: int = 3,
+        warmup_steps: int = 100,
+        weight_decay: float = 0.01,
+        max_seq_length: int = 2048,
+        save_steps: int = 500,
+        eval_steps: int = 100,
+        logging_steps: int = 10,
+        output_dir: Union[str, Path] = "outputs",
+        model_name: Optional[str] = None,
+        lora_config: Optional[Dict[str, Any]] = None,
+        fold_callback: Optional[Callable[[int, int, Dict[str, Any]], None]] = None,
+    ):
+        """
+        Initialize KFoldTrainer.
+        
+        Args:
+            model_loader: Callable that returns a fresh model instance with LoRA applied.
+                         This is needed because we need a fresh model for each fold.
+            tokenizer: The tokenizer to use
+            full_data: Complete training dataset (will be split into k folds)
+            k: Number of folds
+            seed: Random seed for reproducibility
+            fold_callback: Optional callback(fold_idx, total_folds, fold_stats) called after each fold
+        """
+        self.model_loader = model_loader
+        self.tokenizer = tokenizer
+        self.full_data = full_data
+        self.k = k
+        self.seed = seed
+        
+        # Training params
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.num_epochs = num_epochs
+        self.warmup_steps = warmup_steps
+        self.weight_decay = weight_decay
+        self.max_seq_length = max_seq_length
+        self.save_steps = save_steps
+        self.eval_steps = eval_steps
+        self.logging_steps = logging_steps
+        
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Setup logs directory
+        self.logs_dir = self.output_dir / "logs"
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.log_file = self.logs_dir / "training_log.jsonl"
+        
+        self.model_name = model_name
+        self.lora_config = lora_config or {}
+        self.fold_callback = fold_callback
+        
+        # Results storage
+        self.fold_results = []
+    
+    def _write_log_entry(self, entry: Dict[str, Any]):
+        """Write a log entry to the training log file."""
+        entry["timestamp"] = datetime.now().isoformat()
+        with open(self.log_file, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    
+    def _create_kfold_splits(self) -> list:
+        """Create k-fold splits using indices."""
+        import random
+        
+        n_samples = len(self.full_data)
+        indices = list(range(n_samples))
+        
+        random.seed(self.seed)
+        random.shuffle(indices)
+        
+        fold_size = n_samples // self.k
+        remainder = n_samples % self.k
+        
+        folds = []
+        start = 0
+        for i in range(self.k):
+            current_fold_size = fold_size + (1 if i < remainder else 0)
+            end = start + current_fold_size
+            folds.append(indices[start:end])
+            start = end
+        
+        splits = []
+        for i in range(self.k):
+            val_indices = folds[i]
+            train_indices = []
+            for j in range(self.k):
+                if j != i:
+                    train_indices.extend(folds[j])
+            splits.append((train_indices, val_indices))
+        
+        return splits
+    
+    def train(self) -> Dict[str, Any]:
+        """
+        Run k-fold cross-validation training.
+        
+        Returns:
+            Dictionary with aggregated results across all folds
+        """
+        print(f"Starting {self.k}-Fold Cross-Validation Training")
+        print(f"Total samples: {len(self.full_data)}")
+        
+        # Log kfold training start
+        self._write_log_entry({
+            "type": "kfold_start",
+            "k": self.k,
+            "total_samples": len(self.full_data),
+            "model_name": self.model_name,
+            "lora_config": self.lora_config,
+            "training_config": {
+                "learning_rate": self.learning_rate,
+                "batch_size": self.batch_size,
+                "num_epochs": self.num_epochs,
+                "warmup_steps": self.warmup_steps,
+            },
+        })
+        
+        # Create splits
+        splits = self._create_kfold_splits()
+        
+        start_time = time.time()
+        self.fold_results = []
+        best_fold_idx = 0
+        best_fold_val_loss = float("inf")
+        
+        for fold_idx, (train_indices, val_indices) in enumerate(splits):
+            print(f"\n{'='*50}")
+            print(f"FOLD {fold_idx + 1}/{self.k}")
+            print(f"{'='*50}")
+            print(f"Train samples: {len(train_indices)}, Val samples: {len(val_indices)}")
+            
+            # Get data for this fold
+            train_data = [self.full_data[i] for i in train_indices]
+            val_data = [self.full_data[i] for i in val_indices]
+            
+            # Log fold start
+            self._write_log_entry({
+                "type": "fold_start",
+                "fold": fold_idx,
+                "total_folds": self.k,
+                "train_samples": len(train_data),
+                "val_samples": len(val_data),
+            })
+            
+            # Load fresh model for this fold
+            model = self.model_loader()
+            
+            # Create fold-specific output directory
+            fold_output_dir = self.output_dir / f"fold_{fold_idx}"
+            fold_output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create trainer for this fold
+            trainer = LoRATrainer(
+                model=model,
+                tokenizer=self.tokenizer,
+                train_data=train_data,
+                val_data=val_data,
+                learning_rate=self.learning_rate,
+                batch_size=self.batch_size,
+                num_epochs=self.num_epochs,
+                warmup_steps=self.warmup_steps,
+                weight_decay=self.weight_decay,
+                max_seq_length=self.max_seq_length,
+                save_steps=self.save_steps,
+                eval_steps=self.eval_steps,
+                logging_steps=self.logging_steps,
+                output_dir=str(fold_output_dir),
+                model_name=self.model_name,
+                lora_config=self.lora_config,
+            )
+            
+            # Redirect trainer's log to main kfold log
+            trainer.log_file = self.log_file
+            
+            # Train this fold
+            fold_stats = trainer.train()
+            fold_stats["fold"] = fold_idx
+            fold_stats["train_samples"] = len(train_data)
+            fold_stats["val_samples"] = len(val_data)
+            
+            self.fold_results.append(fold_stats)
+            
+            # Track best fold
+            if fold_stats.get("best_val_loss", float("inf")) < best_fold_val_loss:
+                best_fold_val_loss = fold_stats["best_val_loss"]
+                best_fold_idx = fold_idx
+            
+            # Log fold end
+            self._write_log_entry({
+                "type": "fold_end",
+                "fold": fold_idx,
+                "total_folds": self.k,
+                "fold_stats": fold_stats,
+            })
+            
+            # Call fold callback if provided
+            if self.fold_callback:
+                self.fold_callback(fold_idx, self.k, fold_stats)
+            
+            print(f"Fold {fold_idx + 1} complete - Final loss: {fold_stats['final_loss']:.4f}, Best val loss: {fold_stats.get('best_val_loss', 'N/A')}")
+        
+        total_time = time.time() - start_time
+        
+        # Calculate aggregated metrics
+        avg_final_loss = sum(r["final_loss"] for r in self.fold_results) / self.k
+        avg_val_loss = sum(r.get("best_val_loss", 0) for r in self.fold_results) / self.k
+        
+        # Calculate standard deviation
+        import math
+        loss_variance = sum((r["final_loss"] - avg_final_loss) ** 2 for r in self.fold_results) / self.k
+        loss_std = math.sqrt(loss_variance)
+        
+        val_variance = sum((r.get("best_val_loss", 0) - avg_val_loss) ** 2 for r in self.fold_results) / self.k
+        val_std = math.sqrt(val_variance)
+        
+        summary = {
+            "k": self.k,
+            "total_time": total_time,
+            "avg_final_loss": avg_final_loss,
+            "std_final_loss": loss_std,
+            "avg_val_loss": avg_val_loss,
+            "std_val_loss": val_std,
+            "best_fold": best_fold_idx,
+            "best_val_loss": best_fold_val_loss,
+            "fold_results": self.fold_results,
+        }
+        
+        # Save summary
+        summary_path = self.output_dir / "kfold_summary.json"
+        with open(summary_path, "w") as f:
+            json.dump(summary, f, indent=2)
+        
+        # Log kfold end
+        self._write_log_entry({
+            "type": "kfold_end",
+            "k": self.k,
+            "total_time": total_time,
+            "avg_final_loss": avg_final_loss,
+            "std_final_loss": loss_std,
+            "avg_val_loss": avg_val_loss,
+            "std_val_loss": val_std,
+            "best_fold": best_fold_idx,
+            "best_val_loss": best_fold_val_loss,
+        })
+        
+        print(f"\n{'='*50}")
+        print(f"K-FOLD TRAINING COMPLETE")
+        print(f"{'='*50}")
+        print(f"Total time: {total_time:.2f}s")
+        print(f"Average final loss: {avg_final_loss:.4f} ± {loss_std:.4f}")
+        print(f"Average val loss: {avg_val_loss:.4f} ± {val_std:.4f}")
+        print(f"Best fold: {best_fold_idx + 1} (val loss: {best_fold_val_loss:.4f})")
+        print(f"Summary saved to: {summary_path}")
+        
+        return summary

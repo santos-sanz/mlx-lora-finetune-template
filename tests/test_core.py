@@ -242,6 +242,70 @@ class TestTrainValSplit:
         assert val1 == val2
 
 
+class TestKFoldSplit:
+    """Tests for create_kfold_splits function."""
+    
+    def test_correct_number_of_folds(self):
+        """Test that correct number of folds is created."""
+        from src.data_utils import create_kfold_splits
+        
+        data = [{"i": i} for i in range(100)]
+        splits = create_kfold_splits(data, k=5)
+        
+        assert len(splits) == 5
+    
+    def test_no_overlap_in_validation_sets(self):
+        """Test that validation sets across folds don't overlap."""
+        from src.data_utils import create_kfold_splits
+        
+        data = [{"i": i} for i in range(50)]
+        splits = create_kfold_splits(data, k=5)
+        
+        all_val_indices = []
+        for train_idx, val_idx in splits:
+            all_val_indices.extend(val_idx)
+        
+        # All validation indices should be unique
+        assert len(all_val_indices) == len(set(all_val_indices))
+    
+    def test_all_data_used(self):
+        """Test that all data is used across folds."""
+        from src.data_utils import create_kfold_splits
+        
+        data = [{"i": i} for i in range(50)]
+        splits = create_kfold_splits(data, k=5)
+        
+        all_val_indices = set()
+        for train_idx, val_idx in splits:
+            all_val_indices.update(val_idx)
+        
+        # All indices should appear exactly once in validation sets
+        assert all_val_indices == set(range(50))
+    
+    def test_reproducibility(self):
+        """Test same seed gives same split."""
+        from src.data_utils import create_kfold_splits
+        
+        data = [{"i": i} for i in range(50)]
+        splits1 = create_kfold_splits(data, k=5, seed=42)
+        splits2 = create_kfold_splits(data, k=5, seed=42)
+        
+        assert splits1 == splits2
+    
+    def test_get_kfold_data(self):
+        """Test getting data for a specific fold."""
+        from src.data_utils import create_kfold_splits, get_kfold_data
+        
+        data = [{"i": i} for i in range(50)]
+        splits = create_kfold_splits(data, k=5)
+        
+        train_data, val_data = get_kfold_data(data, splits, fold_idx=0)
+        
+        # Fold 0 validation should be ~20% of data
+        assert len(val_data) == 10
+        assert len(train_data) == 40
+
+
 class TestSaveJsonl:
     """Tests for save_jsonl function."""
     

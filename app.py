@@ -1020,15 +1020,15 @@ def page_home():
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("📊 Prepare Data", use_container_width=True):
+        if st.button("📊 Prepare Data", width="stretch"):
             st.session_state.page = "data"
             st.rerun()
     with col2:
-        if st.button("🚀 Train Model", use_container_width=True):
+        if st.button("🚀 Train Model", width="stretch"):
             st.session_state.page = "train"
             st.rerun()
     with col3:
-        if st.button("☁️ Upload to HuggingFace", use_container_width=True):
+        if st.button("☁️ Upload to HuggingFace", width="stretch"):
             st.session_state.page = "upload"
             st.rerun()
 
@@ -1130,7 +1130,7 @@ def page_data_preparation():
             else:
                 st.warning("⚠️ File not found")
         
-        if st.button("🔄 Convert JSON Data", type="primary", use_container_width=True, key="convert_json"):
+        if st.button("🔄 Convert JSON Data", type="primary", width="stretch", key="convert_json"):
             input_path = Path(input_file)
             if not input_path.exists():
                 st.error("❌ Input file does not exist")
@@ -1373,7 +1373,7 @@ def page_data_preparation():
             
             has_content = bool(raw_text) or bool(files_to_process)
             
-            if st.button("✨ Generate Training Data", type="primary", use_container_width=True, disabled=not has_content):
+            if st.button("✨ Generate Training Data", type="primary", width="stretch", disabled=not has_content):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
@@ -1653,7 +1653,7 @@ def page_data_preparation():
             # Generate button
             can_generate = source_text and (not use_local_hf or st.session_state.get('agent_local_model'))
             
-            if st.button("🚀 Generate High-Quality Dataset", type="primary", use_container_width=True, disabled=not can_generate):
+            if st.button("🚀 Generate High-Quality Dataset", type="primary", width="stretch", disabled=not can_generate):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 prompt_display = st.empty()
@@ -1737,7 +1737,7 @@ def page_data_preparation():
     st.divider()
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("📂 View Processed Files", use_container_width=True):
+        if st.button("📂 View Processed Files", width="stretch"):
             output_path = Path(st.session_state.config.data.train_file).parent
             if output_path.exists():
                 files = list(output_path.glob("*.jsonl"))
@@ -1753,7 +1753,7 @@ def page_data_preparation():
             else:
                 st.warning("Output directory does not exist")
     with col2:
-        if st.button("🚀 Go to Training", use_container_width=True):
+        if st.button("🚀 Go to Training", width="stretch"):
             st.session_state.page = "train"
             st.rerun()
 
@@ -1857,7 +1857,7 @@ def render_simple_mode(config):
     for i, (preset_name, preset_config) in enumerate(TRAINING_PRESETS.items()):
         with cols[i]:
             # Create a card-like button
-            if st.button(preset_name, key=f"preset_{i}", use_container_width=True):
+            if st.button(preset_name, key=f"preset_{i}", width="stretch"):
                 selected_preset = preset_name
                 # Apply preset
                 config.lora.rank = preset_config["lora_rank"]
@@ -1918,6 +1918,41 @@ def render_simple_mode(config):
         if st.button("📊 Go to Data Preparation"):
             st.session_state.page = "data"
             st.rerun()
+    
+    # Training Method Selection
+    st.markdown("### 📊 Training Method")
+    
+    training_method = st.radio(
+        "Select training approach:",
+        options=["basic", "kfold"],
+        format_func=lambda x: {
+            "basic": "📈 Basic (Single Split) — Standard train/validation split",
+            "kfold": "🔄 K-Fold Cross-Validation — Multiple splits for robust evaluation"
+        }[x],
+        horizontal=True,
+        key="training_method_selector",
+        help="K-Fold trains multiple models on different data splits, providing more reliable performance estimates"
+    )
+    config.data.training_method = training_method
+    
+    if training_method == "kfold":
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            config.data.kfold_splits = st.slider(
+                "🔢 Number of Folds (K)",
+                min_value=3,
+                max_value=10,
+                value=config.data.kfold_splits,
+                help="More folds = more robust evaluation but longer training time"
+            )
+        with col2:
+            st.info(f"""
+            ⚠️ **K-Fold will train {config.data.kfold_splits} separate models** on different data splits.
+            
+            - **Estimated time:** ~{config.data.kfold_splits}x longer than basic training
+            - **Benefit:** More reliable performance estimates, reduced overfitting risk
+            - **Best for:** Small datasets or when you need confidence in model performance
+            """)
     
     # Optional: Quick settings adjustments
     with st.expander("🔧 Quick Adjustments (Optional)"):
@@ -2115,7 +2150,7 @@ def render_advanced_mode(config):
         st.markdown("### Config Management")
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📥 Load Config from YAML", use_container_width=True):
+            if st.button("📥 Load Config from YAML", width="stretch"):
                 try:
                     st.session_state.config = Config.from_yaml(str(PROJECT_ROOT / "configs" / "default.yaml"))
                     st.success("✅ Loaded default.yaml")
@@ -2123,7 +2158,7 @@ def render_advanced_mode(config):
                 except Exception as e:
                     st.error(f"Error: {e}")
         with col2:
-            if st.button("💾 Save Config to YAML", use_container_width=True):
+            if st.button("💾 Save Config to YAML", width="stretch"):
                 config_path = PROJECT_ROOT / "configs" / "current.yaml"
                 config.to_yaml(str(config_path))
                 st.success(f"✅ Saved to {config_path}")
@@ -2159,137 +2194,91 @@ def render_execute_section(config):
             **Batch Size:** {config.training.batch_size}  
             **Learning Rate:** {config.training.learning_rate:.0e}
             """)
-    
-    # Terminal command helper
-    with st.expander("💻 Run from Terminal (Recommended for Performance)", expanded=False):
-        st.info("💡 Running training from the terminal uses significantly fewer resources and prevents the browser from freezing.")
-        
-        st.markdown("⚠️ **Important:** Ensure you are in the project root directory:")
-        st.code(f"cd {PROJECT_ROOT}", language="bash")
-        
-        st.markdown("Then, run this command to start training with your current settings:")
-        st.code("make train-current", language="bash")
-        
-        with st.expander("Alternative: Direct Python Command"):
-            st.code(f"./.venv/bin/python scripts/train.py --config configs/current.yaml", language="bash")
-        
-        st.markdown(f"""
-        **Recommended Workflow:**
-        1. Click **'🚀 START TRAINING'** above (this saves your settings to `configs/current.yaml`).
-        2. Once logs start, click **'🛑 STOP'** to free up the GPU.
-        3. Run `make train-current` in your terminal.
-        4. **Close this browser tab**!
-        """)
 
     # Action buttons
-    col1, col2, col3 = st.columns([2, 1, 1])
+    st.markdown("### ▶️ Start Training")
+    
+    col1, col2 = st.columns([2, 1])
     
     with col1:
-        btn_label = "🚀 START TRAINING" if not st.session_state.training_running else "⏳ Training in Progress..."
-        if st.button(
-            btn_label,
-            type="primary",
-            use_container_width=True,
-            disabled=st.session_state.training_running
-        ):
+        if st.button("💾 Save Configuration & Show Command", type="primary", width="stretch"):
             # Save current config
             config_path = PROJECT_ROOT / "configs" / "current.yaml"
             config.to_yaml(str(config_path))
-            
-            # Start training subprocess
-            st.session_state.training_running = True
-            st.session_state.training_logs = []
-            
-            cmd = [
-                sys.executable,
-                str(PROJECT_ROOT / "scripts" / "train.py"),
-                "--config", str(config_path)
-            ]
-            
-            st.session_state.training_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                cwd=str(PROJECT_ROOT)
-            )
-            st.rerun()
+            st.success(f"✅ Configuration saved to `{config_path}`")
+            st.session_state.config_saved = True
     
     with col2:
-        if st.button(
-            "🛑 STOP",
-            use_container_width=True,
-            disabled=not st.session_state.training_running
-        ):
-            if st.session_state.training_process:
-                st.session_state.training_process.terminate()
-                st.session_state.training_running = False
-                st.warning("⚠️ Training stopped")
-                st.rerun()
-    
-    with col3:
-        if st.button("🗑️ Clear Logs", use_container_width=True):
-            st.session_state.training_logs = []
+        if st.button("🗑️ Clear Log Viewer", width="stretch"):
+            log_file = PROJECT_ROOT / "outputs" / "training_live.log"
+            if log_file.exists():
+                log_file.unlink()
             st.rerun()
     
-    # Training logs
-    st.markdown("### 📋 Training Logs")
-    log_container = st.empty()
-    
-    
-    if st.session_state.training_running and st.session_state.training_process:
-        process = st.session_state.training_process
-        return_code = process.poll()
+    # Show command after config is saved
+    if st.session_state.get('config_saved', False) or (PROJECT_ROOT / "configs" / "current.yaml").exists():
+        st.markdown("---")
+        st.markdown("### 💻 Run Training in Terminal")
         
-        # Read available logs
-        try:
-            # Make output non-blocking
-            import os
-            try:
-                os.set_blocking(process.stdout.fileno(), False)
-            except:
-                pass
-                
-            # Read output
-            output = process.stdout.read()
-            if output:
-                new_lines = [line for line in output.split('\n') if line.strip()]
-                st.session_state.training_logs.extend(new_lines)
-                # Keep logs manageable
-                if len(st.session_state.training_logs) > 500:
-                    st.session_state.training_logs = st.session_state.training_logs[-500:]
-        except Exception as e:
-            # Ignore read errors
-            pass
+        st.success("✅ **Copy and paste this command in your terminal:**")
+        
+        # Main command with venv
+        cmd = f"cd {PROJECT_ROOT} && ./.venv/bin/python -u scripts/train.py --config configs/current.yaml 2>&1 | tee outputs/training_live.log"
+        st.code(cmd, language="bash")
+        
+        # Tips expander AFTER command
+        with st.expander("💡 Tips & Alternative Commands"):
+            st.markdown("""
+**Why run from terminal?**
+- Uses fewer resources than running from browser
+- Prevents browser freezing during training
+- See real-time logs instantly
+
+**Alternative commands:**
+            """)
+            st.code("make train-current", language="bash")
+            st.caption("Uses Makefile (requires config saved first)")
             
-        # Check if process finished
-        if return_code is not None:
-            # Use strict type check to avoid false positives with 0
-            if return_code == 0:
-                st.success("✅ Training completed successfully!")
-                st.balloons()
-            else:
-                st.error(f"❌ Training failed with exit code {return_code}")
-                # Try to read stderr if failed
-                try:
-                    remaining_out = process.stdout.read()
-                    if remaining_out:
-                         st.session_state.training_logs.extend(remaining_out.split('\n'))
-                except:
-                    pass
-            
-            st.session_state.training_running = False
-            # Final output update
-        else:
-            # Rerun quickly to stream logs
-            time.sleep(0.1)
+            st.code(f"cd {PROJECT_ROOT} && ./.venv/bin/python -u scripts/train.py --config configs/current.yaml", language="bash")
+            st.caption("Quick command without log file")
+    
+    # Log file viewer
+    st.markdown("---")
+    st.markdown("### 📋 Training Log Viewer")
+    
+    log_file = PROJECT_ROOT / "outputs" / "training_live.log"
+    
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 Refresh", key="refresh_log_viewer", width="stretch"):
             st.rerun()
     
-    if st.session_state.training_logs:
-        log_container.code('\n'.join(st.session_state.training_logs[-50:]), language="text")
+    with col1:
+        if log_file.exists():
+            # Get file modification time
+            mod_time = time.strftime('%H:%M:%S', time.localtime(log_file.stat().st_mtime))
+            st.caption(f"📄 `{log_file.name}` — Last updated: {mod_time}")
+        else:
+            st.caption("📄 No log file yet. Start training to generate logs.")
+    
+    # Display log content
+    if log_file.exists():
+        try:
+            with open(log_file, 'r') as f:
+                content = f.read()
+            
+            if content.strip():
+                lines = content.strip().split('\n')
+                st.caption(f"📝 {len(lines)} lines")
+                
+                # Show in a scrollable code block
+                st.code(content, language="text")
+            else:
+                st.info("📭 Log file is empty. Training output will appear here.")
+        except Exception as e:
+            st.error(f"Error reading log file: {e}")
     else:
-        log_container.info("💡 Training logs will appear here when you start training...")
+        st.info("💡 Run the training command in your terminal, then click **Refresh** to see logs here.")
 
 
 # ============================================================================
@@ -2441,7 +2430,7 @@ def render_chat_comparison_panel():
         )
     
     with col2:
-        if st.button("📥 Load Models", type="primary", use_container_width=True):
+        if st.button("📥 Load Models", type="primary", width="stretch"):
             with st.spinner("Loading models... This may take a while."):
                 try:
                     load_test_models(selected)
@@ -2450,7 +2439,7 @@ def render_chat_comparison_panel():
                     st.error(f"❌ Error loading models: {e}")
     
     with col3:
-        if st.button("🗑️ Unload", use_container_width=True, disabled=not st.session_state.test_models_loaded):
+        if st.button("🗑️ Unload", width="stretch", disabled=not st.session_state.test_models_loaded):
             st.session_state.test_base_model = None
             st.session_state.test_finetuned_model = None
             st.session_state.test_tokenizer = None
@@ -2488,9 +2477,9 @@ def render_chat_comparison_panel():
     
     col1, col2 = st.columns([1, 4])
     with col1:
-        generate_btn = st.button("🚀 Generate", type="primary", use_container_width=True, disabled=not user_input)
+        generate_btn = st.button("🚀 Generate", type="primary", width="stretch", disabled=not user_input)
     with col2:
-        if st.button("🗑️ Clear History", use_container_width=True):
+        if st.button("🗑️ Clear History", width="stretch"):
             st.session_state.test_chat_history = []
             st.rerun()
     
@@ -2573,6 +2562,13 @@ def render_training_metrics_panel():
     eval_entries = []
     epoch_entries = []
     
+    # K-Fold specific entries
+    kfold_start_info = None
+    kfold_end_info = None
+    fold_entries = []  # List of {fold, start, end} dicts
+    current_fold = None
+    is_kfold = False
+    
     if log_file.exists():
         try:
             with open(log_file, "r") as f:
@@ -2592,6 +2588,18 @@ def render_training_metrics_panel():
                             eval_entries.append(entry)
                         elif entry_type == "epoch_end":
                             epoch_entries.append(entry)
+                        elif entry_type == "kfold_start":
+                            kfold_start_info = entry
+                            is_kfold = True
+                        elif entry_type == "kfold_end":
+                            kfold_end_info = entry
+                        elif entry_type == "fold_start":
+                            current_fold = {"fold": entry.get("fold"), "start": entry, "end": None}
+                        elif entry_type == "fold_end":
+                            if current_fold:
+                                current_fold["end"] = entry
+                                fold_entries.append(current_fold)
+                                current_fold = None
         except Exception as e:
             st.warning(f"Could not load training logs: {e}")
     
@@ -2768,7 +2776,7 @@ def render_training_metrics_panel():
                 if "Time (s)" in df_display.columns:
                     df_display["Time (s)"] = df_display["Time (s)"].apply(lambda x: f"{x:.1f}")
                 
-                st.dataframe(df_display, use_container_width=True, hide_index=True)
+                st.dataframe(df_display, width="stretch", hide_index=True)
             
             # Training summary
             if train_end_info:
@@ -2793,6 +2801,97 @@ def render_training_metrics_panel():
                         st.metric("Best Val Loss", f"{best_val:.4f}")
                     else:
                         st.metric("Best Val Loss", "N/A")
+    
+    # K-Fold Cross-Validation Results Section
+    if is_kfold and (kfold_end_info or fold_entries):
+        st.markdown("---")
+        st.markdown('<h3 class="section-header">🔄 K-Fold Cross-Validation Results</h3>', unsafe_allow_html=True)
+        
+        # Try to load kfold summary file
+        kfold_summary_path = PROJECT_ROOT / "outputs" / "kfold_summary.json"
+        kfold_summary = None
+        if kfold_summary_path.exists():
+            try:
+                with open(kfold_summary_path, "r") as f:
+                    kfold_summary = json.load(f)
+            except Exception as e:
+                st.warning(f"Could not load k-fold summary: {e}")
+        
+        # Display summary metrics
+        if kfold_summary or kfold_end_info:
+            summary_data = kfold_summary or kfold_end_info
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                k = summary_data.get("k", len(fold_entries))
+                st.metric("Number of Folds", k)
+            with col2:
+                avg_loss = summary_data.get("avg_final_loss", 0)
+                std_loss = summary_data.get("std_final_loss", 0)
+                st.metric("Avg Final Loss", f"{avg_loss:.4f} ± {std_loss:.4f}")
+            with col3:
+                avg_val = summary_data.get("avg_val_loss", 0)
+                std_val = summary_data.get("std_val_loss", 0)
+                st.metric("Avg Val Loss", f"{avg_val:.4f} ± {std_val:.4f}")
+            with col4:
+                best_fold = summary_data.get("best_fold", 0)
+                best_val_loss = summary_data.get("best_val_loss", 0)
+                st.metric(f"⭐ Best Fold", f"Fold {best_fold + 1} ({best_val_loss:.4f})")
+        
+        # Fold-by-Fold Comparison Chart
+        if kfold_summary and "fold_results" in kfold_summary:
+            fold_results = kfold_summary["fold_results"]
+            
+            with st.expander("📊 Fold-by-Fold Comparison", expanded=True):
+                import pandas as pd
+                
+                # Create comparison dataframe
+                fold_data = []
+                for result in fold_results:
+                    fold_data.append({
+                        "Fold": f"Fold {result['fold'] + 1}",
+                        "Final Loss": result.get("final_loss", 0),
+                        "Val Loss": result.get("best_val_loss", 0),
+                        "Train Samples": result.get("train_samples", 0),
+                        "Val Samples": result.get("val_samples", 0),
+                        "Training Time (s)": result.get("total_time", 0),
+                    })
+                
+                df_folds = pd.DataFrame(fold_data)
+                
+                # Display bar chart comparing folds
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Final Loss by Fold**")
+                    st.bar_chart(df_folds.set_index("Fold")["Final Loss"])
+                with col2:
+                    st.markdown("**Validation Loss by Fold**")
+                    st.bar_chart(df_folds.set_index("Fold")["Val Loss"])
+                
+                # Detailed table
+                st.markdown("**Detailed Fold Results**")
+                df_display = df_folds.copy()
+                df_display["Final Loss"] = df_display["Final Loss"].apply(lambda x: f"{x:.4f}")
+                df_display["Val Loss"] = df_display["Val Loss"].apply(lambda x: f"{x:.4f}")
+                df_display["Training Time (s)"] = df_display["Training Time (s)"].apply(lambda x: f"{x:.1f}")
+                st.dataframe(df_display, width="stretch", hide_index=True)
+                
+                # Best fold recommendation
+                best_fold_idx = kfold_summary.get("best_fold", 0)
+                st.success(f"""
+                ⭐ **Recommended:** Use **Fold {best_fold_idx + 1}** adapters for deployment 
+                (lowest validation loss: {kfold_summary.get('best_val_loss', 0):.4f})
+                
+                📁 Checkpoint location: `outputs/fold_{best_fold_idx}/checkpoints/best/`
+                """)
+        
+        # Total training time for k-fold
+        if kfold_end_info:
+            total_time = kfold_end_info.get("total_time", 0)
+            if total_time:
+                mins = int(total_time // 60)
+                secs = int(total_time % 60)
+                st.info(f"⏱️ **Total K-Fold Training Time:** {mins}m {secs}s")
 
 
 def render_batch_testing_panel():
@@ -2860,7 +2959,7 @@ def render_batch_testing_panel():
         run_batch = st.button(
             "🚀 Run Batch Testing",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=len(test_questions) == 0
         )
     
@@ -2899,7 +2998,7 @@ def render_batch_testing_panel():
         # Display results
         import pandas as pd
         df = pd.DataFrame(results)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width="stretch")
         
         # Export options
         st.markdown("### 📤 Export Results")
@@ -2912,7 +3011,7 @@ def render_batch_testing_panel():
                 data=csv_data,
                 file_name="batch_test_results.csv",
                 mime="text/csv",
-                use_container_width=True
+                width="stretch"
             )
         
         with col2:
@@ -2922,7 +3021,7 @@ def render_batch_testing_panel():
                 data=jsonl_data,
                 file_name="batch_test_results.jsonl",
                 mime="application/json",
-                use_container_width=True
+                width="stretch"
             )
 
 
@@ -3382,7 +3481,7 @@ print(response)
     
     # AI-powered generation
     if "AI-powered" in readme_mode:
-        if st.button("🤖 Generate README with AI", use_container_width=True, disabled=not is_openrouter_configured()):
+        if st.button("🤖 Generate README with AI", width="stretch", disabled=not is_openrouter_configured()):
             with st.spinner("Generating README with AI..."):
                 try:
                     ai_prompt = f"""Generate a professional HuggingFace model card README in markdown format for this fine-tuned model.
@@ -3461,7 +3560,7 @@ Make it engaging and informative for users discovering this model."""
         if st.button(
             "🚀 Upload to HuggingFace",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=upload_disabled
         ):
             with st.spinner("Uploading model..."):
@@ -3527,7 +3626,7 @@ Make it engaging and informative for users discovering this model."""
                     st.error(f"❌ Error: {e}")
     
     with col2:
-        if st.button("📋 List Remote Checkpoints", use_container_width=True, disabled=not repo_id):
+        if st.button("📋 List Remote Checkpoints", width="stretch", disabled=not repo_id):
             if repo_id and hf_token:
                 with st.spinner("Fetching repository info..."):
                     try:

@@ -61,6 +61,8 @@ outputs/checkpoints/*
 !outputs/checkpoints/.gitkeep
 outputs/logs/*
 !outputs/logs/.gitkeep
+outputs/fold_*/
+outputs/training_live.log
 
 # ML and Weights
 *.safetensors

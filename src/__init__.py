@@ -9,7 +9,10 @@ __author__ = "Santos Sanz"
 
 # Core modules (no MLX dependency)
 from .config import LoRAConfig, TrainingConfig, ModelConfig, HuggingFaceConfig, Config
-from .data_utils import load_dataset, prepare_training_data, create_train_val_split, save_jsonl
+from .data_utils import (
+    load_dataset, prepare_training_data, create_train_val_split, 
+    save_jsonl, create_kfold_splits, get_kfold_data
+)
 from .hf_utils import get_hf_token, upload_model, upload_checkpoint
 
 # MLX-dependent modules - import lazily to avoid errors when MLX not installed
@@ -21,6 +24,9 @@ def __getattr__(name):
     elif name == "LoRATrainer":
         from .trainer import LoRATrainer
         return LoRATrainer
+    elif name == "KFoldTrainer":
+        from .trainer import KFoldTrainer
+        return KFoldTrainer
     elif name == "download_model":
         from .hf_utils import download_model
         return download_model
@@ -37,6 +43,8 @@ __all__ = [
     "load_dataset",
     "prepare_training_data",
     "create_train_val_split",
+    "create_kfold_splits",
+    "get_kfold_data",
     "save_jsonl",
     # HuggingFace utilities
     "get_hf_token",
@@ -47,6 +55,7 @@ __all__ = [
     "apply_lora",
     "fuse_lora",
     "save_adapters",
-    # Trainer (lazy)
+    # Trainers (lazy)
     "LoRATrainer",
+    "KFoldTrainer",
 ]
