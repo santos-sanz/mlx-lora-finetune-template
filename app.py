@@ -6,14 +6,10 @@ A modern interface for fine-tuning LLM models using LoRA and MLX on Apple Silico
 """
 
 import streamlit as st
-import subprocess
 import sys
-import os
 from pathlib import Path
 import json
 import time
-import threading
-import queue
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent
@@ -22,101 +18,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.config import Config, LoRAConfig, TrainingConfig, ModelConfig, DataConfig, OutputConfig, HuggingFaceConfig
 from src.data_utils import load_dataset, convert_to_mlx_format, generate_with_openrouter, is_openrouter_configured, get_openrouter_config
 from src.hf_utils import get_hf_token, upload_model, upload_checkpoint, list_checkpoints, check_repo_exists
-
-
-# ============================================================================
-# File/Folder Input Helpers
-# ============================================================================
-
-def file_picker(label: str, default_path: str = "", file_types: list = None, key: str = None, help: str = None) -> str:
-    """
-    Simple file path input with validation.
-    
-    Args:
-        label: Input label
-        default_path: Default value
-        file_types: Accepted extensions for help text
-        key: Widget key
-        help: Help text
-    
-    Returns:
-        File path string
-    """
-    picker_key = key or f"fp_{label}"
-    
-    if picker_key not in st.session_state:
-        st.session_state[picker_key] = default_path
-    
-    help_text = help
-    if not help_text and file_types:
-        help_text = f"Supported: {', '.join(file_types)}"
-    
-    path = st.text_input(
-        label,
-        value=st.session_state[picker_key],
-        key=f"{picker_key}_input",
-        help=help_text
-    )
-    
-    st.session_state[picker_key] = path
-    
-    # Show validation
-    if path:
-        p = Path(path)
-        if p.exists():
-            if p.is_file():
-                st.caption(f"✅ File exists ({p.stat().st_size:,} bytes)")
-            else:
-                st.caption("⚠️ Path is a directory, not a file")
-        else:
-            st.caption("⚠️ File not found")
-    
-    return path
-
-
-def folder_picker(label: str, default_path: str = "", key: str = None, help: str = None) -> str:
-    """
-    Simple folder path input with validation.
-    
-    Args:
-        label: Input label
-        default_path: Default value
-        key: Widget key
-        help: Help text
-    
-    Returns:
-        Folder path string
-    """
-    picker_key = key or f"dp_{label}"
-    
-    if picker_key not in st.session_state:
-        st.session_state[picker_key] = default_path
-    
-    path = st.text_input(
-        label,
-        value=st.session_state[picker_key],
-        key=f"{picker_key}_input",
-        help=help or "Enter folder path"
-    )
-    
-    st.session_state[picker_key] = path
-    
-    # Show validation
-    if path:
-        p = Path(path)
-        if p.exists():
-            if p.is_dir():
-                try:
-                    count = len(list(p.iterdir()))
-                    st.caption(f"✅ Folder exists ({count} items)")
-                except:
-                    st.caption("✅ Folder exists")
-            else:
-                st.caption("⚠️ Path is a file, not a folder")
-        else:
-            st.caption("⚠️ Folder not found (will be created)")
-    
-    return path
+from src.ui.inputs import file_picker, folder_picker
+from src.ui.session_state import init_session_state
+from src.ui.status import get_status_badge, count_files
 
 
 # ============================================================================
@@ -843,62 +747,12 @@ def get_theme_css(theme: str = 'dark') -> str:
 st.markdown(get_theme_css(st.session_state.theme), unsafe_allow_html=True)
 
 
-# ============================================================================
-# Session State Initialization
-# ============================================================================
-
-def init_session_state():
-    """Initialize session state variables."""
-    defaults = {
-        'config': None,
-        'training_process': None,
-        'training_logs': [],
-        'training_running': False,
-        'log_queue': None,
-        'theme': 'dark',  # 'dark' or 'light'
-        # Testing page state
-        'test_base_model': None,
-        'test_finetuned_model': None,
-        'test_tokenizer': None,
-        'test_chat_history': [],
-        'selected_checkpoint': None,
-        'test_models_loaded': False,
-    }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-    
-    # Load config if not loaded - prefer current.yaml, fall back to default.yaml
-    if st.session_state.config is None:
-        current_config_path = PROJECT_ROOT / "configs" / "current.yaml"
-        default_config_path = PROJECT_ROOT / "configs" / "default.yaml"
-        
-        if current_config_path.exists():
-            st.session_state.config = Config.from_yaml(str(current_config_path))
-        elif default_config_path.exists():
-            st.session_state.config = Config.from_yaml(str(default_config_path))
-        else:
-            st.session_state.config = Config()
-
-init_session_state()
-
-
-# ============================================================================
-# Utility Functions
-# ============================================================================
-
-def get_status_badge(condition: bool, success_text: str, fail_text: str) -> str:
-    """Generate HTML for status badge."""
-    if condition:
-        return f'<span class="badge badge-success">✓ {success_text}</span>'
-    return f'<span class="badge badge-error">✗ {fail_text}</span>'
-
-
-def count_files(directory: Path, pattern: str = "*") -> int:
-    """Count files matching pattern in directory."""
-    if not directory.exists():
-        return 0
-    return len(list(directory.glob(pattern)))
+init_session_state(PROJECT_ROOT)
+if st.session_state.get("config_load_error"):
+    st.warning(
+        f"Config loading issue detected. Falling back to safe defaults. "
+        f"{st.session_state['config_load_error']}"
+    )
 
 
 # ============================================================================

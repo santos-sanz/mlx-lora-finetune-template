@@ -31,11 +31,12 @@ The Streamlit UI provides:
 git clone https://github.com/santos-sanz/mlx-lora-finetune-template.git
 cd mlx-lora-finetune-template
 
-# Create a virtual environment
+# Recommended (uv): create environment + install dependencies
+uv sync
+
+# Or with pip (compatible fallback)
 python -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 
 # Configure environment variables

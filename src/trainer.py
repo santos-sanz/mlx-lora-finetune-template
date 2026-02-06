@@ -12,7 +12,9 @@ from datetime import datetime
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
-from mlx.utils import tree_flatten
+from mlx.utils import tree_map
+
+from src.param_utils import flatten_params
 
 
 @dataclass
@@ -90,7 +92,7 @@ class LoRATrainer:
     
     def _get_lr(self, step: int) -> float:
         """Calculate learning rate with warmup."""
-        if step < self.warmup_steps:
+        if self.warmup_steps > 0 and step < self.warmup_steps:
             return self.learning_rate * (step + 1) / self.warmup_steps
         return self.learning_rate
     
@@ -131,6 +133,18 @@ class LoRATrainer:
             return mx.array(0.0)
         
         return total_loss / num_tokens
+
+    def _count_batch_tokens(self, batch: list) -> int:
+        """Count effective target tokens in a batch for throughput metrics."""
+        token_count = 0
+        for item in batch:
+            text = item.get("text", "")
+            tokens = self.tokenizer.encode(text)
+            if len(tokens) > self.max_seq_length:
+                tokens = tokens[:self.max_seq_length]
+            if len(tokens) >= 2:
+                token_count += len(tokens) - 1
+        return token_count
     
     def train(self) -> Dict[str, Any]:
         """
@@ -168,9 +182,6 @@ class LoRATrainer:
             weight_decay=self.weight_decay,
         )
         
-        # Get trainable parameters
-        trainable = self.model.trainable_parameters()
-        
         # Loss and grad function
         def loss_fn(model, batch):
             self.model = model
@@ -185,40 +196,67 @@ class LoRATrainer:
             self.epoch = epoch
             epoch_loss = 0.0
             num_batches = 0
-            
-            for batch in self._batch_iterate(self.train_data):
+            accumulated_grads = None
+            accumulated_micro_steps = 0
+            accumulated_loss = 0.0
+
+            num_micro_batches = (len(self.train_data) + self.batch_size - 1) // self.batch_size
+            for micro_step, batch in enumerate(self._batch_iterate(self.train_data), start=1):
                 # Update learning rate
                 lr = self._get_lr(self.global_step)
                 optimizer.learning_rate = lr
                 
                 # Forward and backward pass
                 loss, grads = loss_and_grad(self.model, batch)
-                
-                # Update weights
-                optimizer.update(self.model, grads)
+                total_tokens += self._count_batch_tokens(batch)
+                accumulated_loss += loss.item()
+                accumulated_micro_steps += 1
+
+                if accumulated_grads is None:
+                    accumulated_grads = grads
+                else:
+                    accumulated_grads = tree_map(lambda x, y: x + y, accumulated_grads, grads)
+
+                is_boundary = accumulated_micro_steps >= self.gradient_accumulation_steps
+                is_last_micro_batch = micro_step == num_micro_batches
+                if not is_boundary and not is_last_micro_batch:
+                    continue
+
+                # Normalize gradients by accumulation count and update weights.
+                # This makes gradient_accumulation_steps change the effective batch size.
+                grads_to_apply = tree_map(
+                    lambda grad: grad / accumulated_micro_steps, accumulated_grads
+                )
+                optimizer.update(self.model, grads_to_apply)
                 mx.eval(self.model.parameters(), optimizer.state)
-                
-                epoch_loss += loss.item()
+
+                step_loss = accumulated_loss / accumulated_micro_steps
+                epoch_loss += step_loss
                 num_batches += 1
                 self.global_step += 1
-                
+
+                # Reset accumulation buffers.
+                accumulated_grads = None
+                accumulated_micro_steps = 0
+                accumulated_loss = 0.0
+
                 # Logging
                 if self.global_step % self.logging_steps == 0:
                     elapsed = time.time() - start_time
                     metrics = TrainingMetrics(
                         step=self.global_step,
-                        loss=loss.item(),
+                        loss=step_loss,
                         learning_rate=lr,
                         tokens_per_second=total_tokens / elapsed if elapsed > 0 else 0,
                         elapsed_time=elapsed,
                     )
                     self._log_metrics(metrics)
-                
+
                 # Evaluation
                 if self.val_data and self.global_step % self.eval_steps == 0:
                     val_loss = self._evaluate()
                     print(f"Step {self.global_step} - Validation loss: {val_loss:.4f}")
-                    
+
                     # Log validation result
                     self._write_log_entry({
                         "type": "eval",
@@ -227,11 +265,11 @@ class LoRATrainer:
                         "val_loss": val_loss,
                         "elapsed_time": time.time() - start_time,
                     })
-                    
+
                     if val_loss < self.best_val_loss:
                         self.best_val_loss = val_loss
                         self._save_checkpoint("best")
-                
+
                 # Save checkpoint
                 if self.global_step % self.save_steps == 0:
                     self._save_checkpoint(f"step-{self.global_step}")
@@ -320,21 +358,8 @@ class LoRATrainer:
         """Save a training checkpoint."""
         checkpoint_dir = self.output_dir / "checkpoints" / name
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        
-        # trainable_parameters() returns a nested dictionary which save_safetensors cannot handle.
-        # We must flatten it to a keys-dot-notation dictionary.
-        def flatten_params(container, parent_key="", sep="."):
-            items = []
-            iterator = container.items() if isinstance(container, dict) else enumerate(container)
-            
-            for k, v in iterator:
-                new_key = f"{parent_key}{sep}{k}" if parent_key else str(k)
-                if isinstance(v, (dict, list)):
-                    items.extend(flatten_params(v, new_key, sep=sep).items())
-                else:
-                    items.append((new_key, v))
-            return dict(items)
-            
+
+        # trainable_parameters() returns nested structures; safetensors expects flat keys.
         trainable_params = flatten_params(self.model.trainable_parameters())
         
         mx.save_safetensors(str(checkpoint_dir / "adapters.safetensors"), trainable_params)

@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Optional, Union, Dict, Any, Tuple
 import json
 
+from src.param_utils import flatten_params
+
 
 def load_base_model(
     model_name: str,
@@ -57,9 +59,6 @@ def apply_lora(
     # Freeze the base model
     model.freeze()
     
-    # Freeze the base model
-    model.freeze()
-    
     # Build LoRA config for the new API
     # If target_modules is None, mlx_lm will auto-detect linear layers
     lora_config = {
@@ -81,8 +80,6 @@ def apply_lora(
             num_layers = 32  # Default fallback
     
     linear_to_lora_layers(model, num_layers, lora_config)
-    
-    # Use mlx_lm's helper to count trainable parameters
     
     # Use mlx_lm's helper to count trainable parameters
     from mlx_lm.tuner.utils import print_trainable_parameters
@@ -114,9 +111,10 @@ def fuse_lora(
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # Load adapter weights
+    # Load adapter weights and apply them before fusing.
     adapter_path = Path(adapter_path)
     adapters = mx.load(str(adapter_path / "adapters.safetensors"))
+    model.load_weights(list(adapters.items()))
     
     # Fuse weights
     fused_model = fuse_lora_layers(model)
@@ -151,18 +149,6 @@ def save_adapters(
     output_path.mkdir(parents=True, exist_ok=True)
     
     # Get trainable (LoRA) parameters only
-    def flatten_params(container, parent_key="", sep="."):
-        items = []
-        iterator = container.items() if isinstance(container, dict) else enumerate(container)
-        
-        for k, v in iterator:
-            new_key = f"{parent_key}{sep}{k}" if parent_key else str(k)
-            if isinstance(v, (dict, list)):
-                items.extend(flatten_params(v, new_key, sep=sep).items())
-            else:
-                items.append((new_key, v))
-        return dict(items)
-
     trainable_params = flatten_params(model.trainable_parameters())
     
     # Save adapters

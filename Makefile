@@ -3,16 +3,25 @@ PYTHON = $(VENV)/bin/python
 PIP = $(VENV)/bin/pip
 STREAMLIT = $(VENV)/bin/streamlit
 
-.PHONY: setup train train-current prepare-data run upload clean-logs clean
+.PHONY: setup setup-uv train train-current prepare-data run debug-ui upload clean-logs clean
 
 run:
 	$(STREAMLIT) run app.py
+
+debug-ui:
+	mkdir -p work-tmp/debug
+	$(STREAMLIT) run app.py --server.headless true --server.address 127.0.0.1 --server.port 8501 2>&1 | tee work-tmp/debug/backend.log
 
 setup:
 	python3 -m venv $(VENV)
 	$(PIP) install -r requirements.txt
 	cp .env.example .env
 	@echo "Setup complete. Please edit your .env file."
+
+setup-uv:
+	uv sync
+	cp .env.example .env
+	@echo "uv setup complete. Please edit your .env file."
 
 prepare-data:
 	$(PYTHON) scripts/prepare_data.py --input data/raw/dataset.json --output data/processed

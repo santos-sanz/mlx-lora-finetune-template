@@ -1,10 +1,10 @@
 model:
-  name: Qwen/Qwen3-0.6B
+  name: LiquidAI/LFM2-2.6B-Exp
   tokenizer: LiquidAI/LFM2-2.6B-Exp
   max_seq_length: 2048
 lora:
-  rank: 4
-  alpha: 8
+  rank: 32
+  alpha: 64
   dropout: 0.05
   target_modules:
   - feed_forward.w1
@@ -17,9 +17,9 @@ lora:
   - conv.in_proj
   - conv.out_proj
 training:
-  learning_rate: 0.0002
+  learning_rate: 2.0e-05
   batch_size: 2
-  num_epochs: 1
+  num_epochs: 10
   gradient_accumulation_steps: 1
   warmup_steps: 100
   weight_decay: 0.01
