@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import config classes directly (no MLX dependency)
 from src.config import (
-    Config, LoRAConfig, TrainingConfig, ModelConfig, 
+    Config, LoRAConfig, TrainingConfig, GRPOConfig, RewardConfig, ModelConfig,
     DataConfig, OutputConfig, HuggingFaceConfig
 )
 
@@ -85,6 +85,36 @@ class TestTrainingConfig:
         assert "save_steps" in d
 
 
+class TestGRPOConfig:
+    """Tests for GRPOConfig class."""
+
+    def test_default_values(self):
+        config = GRPOConfig()
+        assert config.group_size >= 2
+        assert config.beta_kl >= 0.0
+
+    def test_to_dict(self):
+        config = GRPOConfig(group_size=6, beta_kl=0.05)
+        d = config.to_dict()
+        assert d["group_size"] == 6
+        assert d["beta_kl"] == 0.05
+
+
+class TestRewardConfig:
+    """Tests for RewardConfig class."""
+
+    def test_default_values(self):
+        config = RewardConfig()
+        assert config.function == "weighted_rules"
+        assert "exact_match" in config.weights
+
+    def test_to_dict(self):
+        config = RewardConfig(pass_threshold=0.7)
+        d = config.to_dict()
+        assert d["pass_threshold"] == 0.7
+        assert "weights" in d
+
+
 class TestModelConfig:
     """Tests for ModelConfig class."""
     
@@ -109,6 +139,8 @@ class TestConfig:
         config = Config()
         assert isinstance(config.lora, LoRAConfig)
         assert isinstance(config.training, TrainingConfig)
+        assert isinstance(config.grpo, GRPOConfig)
+        assert isinstance(config.reward, RewardConfig)
         assert isinstance(config.model, ModelConfig)
     
     def test_yaml_round_trip(self):

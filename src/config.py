@@ -9,7 +9,7 @@ This module provides dataclass-based configurations for:
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pathlib import Path
 import yaml
 import os
@@ -126,8 +126,15 @@ class DataConfig:
     valid_file: str = "data/processed/valid.jsonl"
     prompt_template: Optional[str] = None
     
+    # RL data paths (GRPO)
+    rl_train_file: str = "data/processed/rl_train.jsonl"
+    rl_valid_file: str = "data/processed/rl_valid.jsonl"
+    rl_eval_file: str = "data/processed/rl_eval.jsonl"
+
+    # Training method
+    training_method: str = "basic"  # "basic", "kfold", "grpo", or "grpo_kfold"
+
     # K-Fold Cross-Validation settings
-    training_method: str = "basic"  # "basic" or "kfold"
     kfold_splits: int = 5  # Number of folds (3-10)
     kfold_seed: int = 42  # Seed for reproducibility
     
@@ -136,10 +143,82 @@ class DataConfig:
         return {
             "train_file": self.train_file,
             "valid_file": self.valid_file,
+            "rl_train_file": self.rl_train_file,
+            "rl_valid_file": self.rl_valid_file,
+            "rl_eval_file": self.rl_eval_file,
             "prompt_template": self.prompt_template,
             "training_method": self.training_method,
             "kfold_splits": self.kfold_splits,
             "kfold_seed": self.kfold_seed,
+        }
+
+
+@dataclass
+class GRPOConfig:
+    """Configuration for GRPO (Group Relative Policy Optimization) training."""
+
+    group_size: int = 4
+    clip_epsilon: float = 0.2
+    beta_kl: float = 0.02
+    advantage_epsilon: float = 1e-8
+
+    # Generation settings
+    max_generation_tokens: int = 128
+    temperature: float = 0.8
+    top_p: float = 1.0
+
+    # Training loop behavior
+    warmup_epochs: int = 1
+    preflight_sample_size: int = 128
+    min_reward_std: float = 1e-6
+    eval_steps: int = 50
+    logging_steps: int = 10
+
+    def to_dict(self) -> dict:
+        """Convert config to dictionary."""
+        return {
+            "group_size": self.group_size,
+            "clip_epsilon": self.clip_epsilon,
+            "beta_kl": self.beta_kl,
+            "advantage_epsilon": self.advantage_epsilon,
+            "max_generation_tokens": self.max_generation_tokens,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "warmup_epochs": self.warmup_epochs,
+            "preflight_sample_size": self.preflight_sample_size,
+            "min_reward_std": self.min_reward_std,
+            "eval_steps": self.eval_steps,
+            "logging_steps": self.logging_steps,
+        }
+
+
+@dataclass
+class RewardConfig:
+    """Configuration for rule-based reward computation in GRPO."""
+
+    function: str = "weighted_rules"
+    weights: Dict[str, float] = field(default_factory=lambda: {
+        "exact_match": 0.4,
+        "keyword_coverage": 0.3,
+        "json_format": 0.2,
+        "length_band": 0.1,
+    })
+    pass_threshold: float = 0.6
+    metadata_keyword_field: str = "keywords"
+    min_response_length: int = 16
+    max_response_length: int = 512
+    require_nonzero_variance: bool = True
+
+    def to_dict(self) -> dict:
+        """Convert config to dictionary."""
+        return {
+            "function": self.function,
+            "weights": self.weights,
+            "pass_threshold": self.pass_threshold,
+            "metadata_keyword_field": self.metadata_keyword_field,
+            "min_response_length": self.min_response_length,
+            "max_response_length": self.max_response_length,
+            "require_nonzero_variance": self.require_nonzero_variance,
         }
 
 
@@ -174,6 +253,8 @@ class Config:
     model: ModelConfig = field(default_factory=ModelConfig)
     lora: LoRAConfig = field(default_factory=LoRAConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    grpo: GRPOConfig = field(default_factory=GRPOConfig)
+    reward: RewardConfig = field(default_factory=RewardConfig)
     data: DataConfig = field(default_factory=DataConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     huggingface: HuggingFaceConfig = field(default_factory=HuggingFaceConfig)
@@ -188,6 +269,8 @@ class Config:
             model=ModelConfig(**data.get("model", {})),
             lora=LoRAConfig(**data.get("lora", {})),
             training=TrainingConfig(**data.get("training", {})),
+            grpo=GRPOConfig(**data.get("grpo", {})),
+            reward=RewardConfig(**data.get("reward", {})),
             data=DataConfig(**data.get("data", {})),
             output=OutputConfig(**data.get("output", {})),
             huggingface=HuggingFaceConfig(**data.get("huggingface", {})),
@@ -199,6 +282,8 @@ class Config:
             "model": self.model.to_dict(),
             "lora": self.lora.to_dict(),
             "training": self.training.to_dict(),
+            "grpo": self.grpo.to_dict(),
+            "reward": self.reward.to_dict(),
             "data": self.data.to_dict(),
             "output": self.output.to_dict(),
             "huggingface": self.huggingface.to_dict(),

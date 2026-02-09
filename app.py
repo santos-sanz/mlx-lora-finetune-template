@@ -2088,10 +2088,13 @@ def render_simple_mode(config):
     
     training_method = st.radio(
         "Select training approach:",
-        options=["basic", "kfold"],
+        options=["basic", "kfold", "grpo", "grpo_kfold"],
+        index=["basic", "kfold", "grpo", "grpo_kfold"].index(getattr(config.data, "training_method", "basic")) if getattr(config.data, "training_method", "basic") in ["basic", "kfold", "grpo", "grpo_kfold"] else 0,
         format_func=lambda x: {
             "basic": "📈 Basic (Single Split) — Standard train/validation split",
-            "kfold": "🔄 K-Fold Cross-Validation — Multiple splits for robust evaluation"
+            "kfold": "🔄 K-Fold Cross-Validation — Multiple splits for robust evaluation",
+            "grpo": "🧠 GRPO (RL) — Reward-driven policy optimization",
+            "grpo_kfold": "🧪 GRPO + K-Fold — RL with robust cross-validation",
         }[x],
         horizontal=True,
         key="training_method_selector",
@@ -2099,7 +2102,7 @@ def render_simple_mode(config):
     )
     config.data.training_method = training_method
     
-    if training_method == "kfold":
+    if training_method in {"kfold", "grpo_kfold"}:
         col1, col2 = st.columns([1, 2])
         with col1:
             config.data.kfold_splits = st.slider(
@@ -2117,6 +2120,21 @@ def render_simple_mode(config):
             - **Benefit:** More reliable performance estimates, reduced overfitting risk
             - **Best for:** Small datasets or when you need confidence in model performance
             """)
+
+    if training_method in {"grpo", "grpo_kfold"}:
+        st.markdown("### 🎯 GRPO Reward Configuration")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            config.grpo.group_size = st.slider("Group Size", min_value=2, max_value=8, value=config.grpo.group_size)
+            config.grpo.clip_epsilon = st.slider("Clip Epsilon", min_value=0.05, max_value=0.4, value=float(config.grpo.clip_epsilon), step=0.05)
+        with col2:
+            config.grpo.beta_kl = st.number_input("KL Beta", min_value=0.0, max_value=1.0, value=float(config.grpo.beta_kl), step=0.01, format="%.3f")
+            config.grpo.warmup_epochs = st.number_input("Warmup SFT Epochs", min_value=0, max_value=10, value=int(config.grpo.warmup_epochs))
+        with col3:
+            config.grpo.max_generation_tokens = st.slider("Max Gen Tokens", min_value=32, max_value=512, value=int(config.grpo.max_generation_tokens), step=32)
+            config.reward.pass_threshold = st.slider("Reward Pass Threshold", min_value=0.0, max_value=1.0, value=float(config.reward.pass_threshold), step=0.05)
+
+        st.caption(f"RL files: train=`{config.data.rl_train_file}`, valid=`{config.data.rl_valid_file}`, eval=`{config.data.rl_eval_file}`")
     
     # Optional: Quick settings adjustments
     with st.expander("🔧 Quick Adjustments (Optional)"):
@@ -2278,10 +2296,34 @@ def render_advanced_mode(config):
                 max_value=500,
                 value=config.training.logging_steps
             )
+
+        st.markdown("### Training Method")
+        config.data.training_method = st.selectbox(
+            "Method",
+            options=["basic", "kfold", "grpo", "grpo_kfold"],
+            index=["basic", "kfold", "grpo", "grpo_kfold"].index(getattr(config.data, "training_method", "basic")),
+            help="Choose supervised fine-tuning or reward-based GRPO",
+        )
+
+        if config.data.training_method in {"grpo", "grpo_kfold"}:
+            st.markdown("### GRPO Settings")
+            g1, g2, g3 = st.columns(3)
+            with g1:
+                config.grpo.group_size = st.number_input("Group Size", min_value=2, max_value=16, value=int(config.grpo.group_size))
+                config.grpo.clip_epsilon = st.number_input("Clip Epsilon", min_value=0.01, max_value=1.0, value=float(config.grpo.clip_epsilon), step=0.01, format="%.2f")
+                config.grpo.beta_kl = st.number_input("KL Beta", min_value=0.0, max_value=2.0, value=float(config.grpo.beta_kl), step=0.01, format="%.3f")
+            with g2:
+                config.grpo.warmup_epochs = st.number_input("Warmup Epochs", min_value=0, max_value=50, value=int(config.grpo.warmup_epochs))
+                config.grpo.max_generation_tokens = st.number_input("Max Generation Tokens", min_value=16, max_value=2048, value=int(config.grpo.max_generation_tokens))
+                config.grpo.temperature = st.number_input("Temperature", min_value=0.0, max_value=2.0, value=float(config.grpo.temperature), step=0.1, format="%.2f")
+            with g3:
+                config.reward.pass_threshold = st.number_input("Reward Pass Threshold", min_value=0.0, max_value=1.0, value=float(config.reward.pass_threshold), step=0.05, format="%.2f")
+                config.reward.min_response_length = st.number_input("Reward Min Length", min_value=0, max_value=4096, value=int(config.reward.min_response_length))
+                config.reward.max_response_length = st.number_input("Reward Max Length", min_value=1, max_value=8192, value=int(config.reward.max_response_length))
     
     with tab3:
         st.markdown("### Data Paths")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             config.data.train_file = st.text_input(
                 "📄 Training File",
@@ -2291,6 +2333,24 @@ def render_advanced_mode(config):
             config.data.valid_file = st.text_input(
                 "📄 Validation File",
                 value=config.data.valid_file
+            )
+        with col3:
+            config.data.rl_eval_file = st.text_input(
+                "📄 RL Eval File",
+                value=getattr(config.data, "rl_eval_file", "data/processed/rl_eval.jsonl")
+            )
+
+        st.markdown("### RL Data Paths")
+        r1, r2 = st.columns(2)
+        with r1:
+            config.data.rl_train_file = st.text_input(
+                "🧠 RL Train File",
+                value=getattr(config.data, "rl_train_file", "data/processed/rl_train.jsonl")
+            )
+        with r2:
+            config.data.rl_valid_file = st.text_input(
+                "🧠 RL Valid File",
+                value=getattr(config.data, "rl_valid_file", "data/processed/rl_valid.jsonl")
             )
         
         st.markdown("### Output Directories")
@@ -2333,11 +2393,17 @@ def render_execute_section(config):
     st.markdown('<h2 class="section-header">▶️ Start Training</h2>', unsafe_allow_html=True)
     
     # Pre-flight checks
-    train_exists = Path(config.data.train_file).exists()
-    
-    if not train_exists:
-        st.error("❌ Training data not found. Please prepare your data first.")
-        return
+    training_method = getattr(config.data, "training_method", "basic")
+    if training_method in {"grpo", "grpo_kfold"}:
+        train_exists = Path(config.data.rl_train_file).exists()
+        if not train_exists:
+            st.error("❌ RL training data not found. Prepare `rl_train.jsonl` first or run prepare_data with `--mode grpo`.")
+            return
+    else:
+        train_exists = Path(config.data.train_file).exists()
+        if not train_exists:
+            st.error("❌ Training data not found. Please prepare your data first.")
+            return
     
     # Summary before training
     with st.expander("📋 Training Summary", expanded=True):
@@ -2358,6 +2424,11 @@ def render_execute_section(config):
             **Batch Size:** {config.training.batch_size}  
             **Learning Rate:** {config.training.learning_rate:.0e}
             """)
+        st.markdown(f"**Method:** `{training_method}`")
+        if training_method in {"grpo", "grpo_kfold"}:
+            st.markdown(
+                f"**GRPO:** group={config.grpo.group_size}, clip={config.grpo.clip_epsilon}, β_kl={config.grpo.beta_kl}, warmup={config.grpo.warmup_epochs} epoch(s)"
+            )
 
     # Action buttons
     st.markdown("### ▶️ Start Training")
@@ -2725,13 +2796,19 @@ def render_training_metrics_panel():
     step_entries = []
     eval_entries = []
     epoch_entries = []
+    grpo_start_info = None
+    grpo_end_info = None
+    grpo_step_entries = []
+    grpo_eval_entries = []
     
     # K-Fold specific entries
     kfold_start_info = None
     kfold_end_info = None
+    grpo_kfold_end_info = None
     fold_entries = []  # List of {fold, start, end} dicts
     current_fold = None
     is_kfold = False
+    is_grpo = False
     
     if log_file.exists():
         try:
@@ -2752,14 +2829,36 @@ def render_training_metrics_panel():
                             eval_entries.append(entry)
                         elif entry_type == "epoch_end":
                             epoch_entries.append(entry)
+                        elif entry_type == "grpo_start":
+                            grpo_start_info = entry
+                            is_grpo = True
+                        elif entry_type == "grpo_end":
+                            grpo_end_info = entry
+                        elif entry_type == "grpo_step":
+                            grpo_step_entries.append(entry)
+                            is_grpo = True
+                        elif entry_type == "grpo_eval":
+                            grpo_eval_entries.append(entry)
+                            is_grpo = True
                         elif entry_type == "kfold_start":
                             kfold_start_info = entry
                             is_kfold = True
                         elif entry_type == "kfold_end":
                             kfold_end_info = entry
+                        elif entry_type == "grpo_kfold_end":
+                            grpo_kfold_end_info = entry
+                            is_kfold = True
+                            is_grpo = True
                         elif entry_type == "fold_start":
                             current_fold = {"fold": entry.get("fold"), "start": entry, "end": None}
+                        elif entry_type == "grpo_fold_start":
+                            current_fold = {"fold": entry.get("fold"), "start": entry, "end": None}
                         elif entry_type == "fold_end":
+                            if current_fold:
+                                current_fold["end"] = entry
+                                fold_entries.append(current_fold)
+                                current_fold = None
+                        elif entry_type == "grpo_fold_end":
                             if current_fold:
                                 current_fold["end"] = entry
                                 fold_entries.append(current_fold)
@@ -2767,7 +2866,7 @@ def render_training_metrics_panel():
         except Exception as e:
             st.warning(f"Could not load training logs: {e}")
     
-    has_logs = len(step_entries) > 0
+    has_logs = len(step_entries) > 0 or len(grpo_step_entries) > 0
     
     col1, col2 = st.columns([2, 3])
     
@@ -2799,6 +2898,27 @@ def render_training_metrics_panel():
             val_samples = train_start_info.get("val_samples", 0)
             if train_samples or val_samples:
                 st.markdown(f"**📊 Data:** {train_samples} train / {val_samples} validation samples")
+        elif grpo_start_info:
+            grpo_cfg = grpo_start_info.get("grpo_config", {})
+            log_lora = grpo_start_info.get("lora_config", {})
+            model_name = grpo_start_info.get("model_name", config.model.name)
+
+            st.markdown(f"""
+            | Parameter | Value |
+            |-----------|-------|
+            | **Model** | `{model_name}` |
+            | **LoRA Rank** | {log_lora.get('rank', config.lora.rank)} |
+            | **LoRA Alpha** | {log_lora.get('alpha', config.lora.alpha)} |
+            | **GRPO Group Size** | {grpo_cfg.get('group_size', config.grpo.group_size)} |
+            | **Clip Epsilon** | {grpo_cfg.get('clip_epsilon', config.grpo.clip_epsilon)} |
+            | **KL Beta** | {grpo_cfg.get('beta_kl', config.grpo.beta_kl)} |
+            | **Max Gen Tokens** | {grpo_cfg.get('max_generation_tokens', config.grpo.max_generation_tokens)} |
+            | **Temperature** | {grpo_cfg.get('temperature', config.grpo.temperature)} |
+            """)
+            train_samples = grpo_start_info.get("train_samples", 0)
+            val_samples = grpo_start_info.get("val_samples", 0)
+            if train_samples or val_samples:
+                st.markdown(f"**📊 RL Data:** {train_samples} train / {val_samples} validation samples")
         else:
             st.markdown(f"""
             | Parameter | Value |
@@ -2827,7 +2947,10 @@ def render_training_metrics_panel():
         
         # Try to load training state from best/final checkpoint
         for cp_name in ["final", "best"]:
-            state_path = PROJECT_ROOT / "outputs" / "checkpoints" / cp_name / "trainer_state.json"
+            state_dir = PROJECT_ROOT / "outputs" / "checkpoints" / cp_name
+            trainer_state_path = state_dir / "trainer_state.json"
+            grpo_state_path = state_dir / "grpo_state.json"
+            state_path = trainer_state_path if trainer_state_path.exists() else grpo_state_path
             if state_path.exists():
                 try:
                     with open(state_path, "r") as f:
@@ -2840,10 +2963,13 @@ def render_training_metrics_panel():
                         st.metric("Epochs Completed", state.get("epoch", "N/A") + 1 if isinstance(state.get("epoch"), int) else "N/A")
                     with col_c:
                         best_loss = state.get("best_val_loss")
-                        if best_loss and best_loss != float("inf"):
+                        best_reward = state.get("best_eval_reward")
+                        if best_reward is not None:
+                            st.metric("Best Eval Reward", f"{best_reward:.4f}")
+                        elif best_loss and best_loss != float("inf"):
                             st.metric("Best Val Loss", f"{best_loss:.4f}")
                         else:
-                            st.metric("Best Val Loss", "N/A")
+                            st.metric("Best Metric", "N/A")
                     
                     st.success(f"✅ Loaded training state from **{cp_name}** checkpoint")
                     break
@@ -2856,42 +2982,60 @@ def render_training_metrics_panel():
         st.markdown("### 📉 Loss Curve")
         if has_logs:
             import pandas as pd
-            
-            # Create dataframe for step losses
-            steps = [e["step"] for e in step_entries]
-            losses = [e["loss"] for e in step_entries]
-            
-            df_loss = pd.DataFrame({
-                "Step": steps,
-                "Training Loss": losses,
-            })
-            
-            # Add validation losses if available
-            if eval_entries:
-                eval_steps = [e["step"] for e in eval_entries]
-                eval_losses = [e["val_loss"] for e in eval_entries]
-                df_val = pd.DataFrame({
-                    "Step": eval_steps,
-                    "Validation Loss": eval_losses,
+
+            if grpo_step_entries:
+                df_loss = pd.DataFrame({
+                    "Step": [e["step"] for e in grpo_step_entries],
+                    "Total Loss": [e.get("total_loss", 0.0) for e in grpo_step_entries],
+                    "Policy Loss": [e.get("policy_loss", 0.0) for e in grpo_step_entries],
+                    "KL Loss": [e.get("kl_loss", 0.0) for e in grpo_step_entries],
                 })
-                # Merge with training losses
-                df_loss = df_loss.merge(df_val, on="Step", how="outer").sort_values("Step")
-            
-            # Display loss chart
-            st.line_chart(df_loss.set_index("Step"))
-            
-            # Show epoch markers
-            if epoch_entries:
-                epoch_info = ", ".join([f"Epoch {e['epoch']+1}: step {e['global_step']}" for e in epoch_entries])
-                st.caption(f"📌 Epoch markers: {epoch_info}")
+                st.line_chart(df_loss.set_index("Step"))
+
+                st.markdown("### 🏆 Reward Curve")
+                df_reward = pd.DataFrame({
+                    "Step": [e["step"] for e in grpo_step_entries],
+                    "Mean Reward": [e.get("mean_reward", 0.0) for e in grpo_step_entries],
+                    "Reward Std": [e.get("std_reward", 0.0) for e in grpo_step_entries],
+                })
+                st.line_chart(df_reward.set_index("Step"))
+            else:
+                # Create dataframe for step losses
+                steps = [e["step"] for e in step_entries]
+                losses = [e["loss"] for e in step_entries]
+
+                df_loss = pd.DataFrame({
+                    "Step": steps,
+                    "Training Loss": losses,
+                })
+
+                # Add validation losses if available
+                if eval_entries:
+                    eval_steps = [e["step"] for e in eval_entries]
+                    eval_losses = [e["val_loss"] for e in eval_entries]
+                    df_val = pd.DataFrame({
+                        "Step": eval_steps,
+                        "Validation Loss": eval_losses,
+                    })
+                    # Merge with training losses
+                    df_loss = df_loss.merge(df_val, on="Step", how="outer").sort_values("Step")
+
+                # Display loss chart
+                st.line_chart(df_loss.set_index("Step"))
+
+                # Show epoch markers
+                if epoch_entries:
+                    epoch_info = ", ".join([f"Epoch {e['epoch']+1}: step {e['global_step']}" for e in epoch_entries])
+                    st.caption(f"📌 Epoch markers: {epoch_info}")
         else:
             st.info("💡 Loss curve visualization requires training log data. Run training with the built-in trainer to generate detailed logs.")
         
         # Learning Rate Curve
-        if has_logs:
+        if has_logs and (step_entries or grpo_step_entries):
             st.markdown("### 📈 Learning Rate")
-            lr_steps = [e["step"] for e in step_entries]
-            lr_values = [e["learning_rate"] for e in step_entries]
+            source_steps = grpo_step_entries if grpo_step_entries else step_entries
+            lr_steps = [e["step"] for e in source_steps]
+            lr_values = [e.get("learning_rate", e.get("lr", 0.0)) for e in source_steps]
             
             import pandas as pd
             df_lr = pd.DataFrame({
@@ -2924,17 +3068,52 @@ def render_training_metrics_panel():
             import pandas as pd
             
             # Create comprehensive metrics table
-            df_metrics = pd.DataFrame(step_entries)
-            cols_to_show = ["step", "epoch", "loss", "learning_rate", "tokens_per_second", "elapsed_time"]
+            metrics_source = grpo_step_entries if grpo_step_entries else step_entries
+            df_metrics = pd.DataFrame(metrics_source)
+            cols_to_show = (
+                ["step", "epoch", "policy_loss", "kl_loss", "total_loss", "mean_reward", "std_reward", "learning_rate", "tokens_per_second", "elapsed_time"]
+                if grpo_step_entries
+                else ["step", "epoch", "loss", "learning_rate", "tokens_per_second", "elapsed_time"]
+            )
             available_cols = [c for c in cols_to_show if c in df_metrics.columns]
             
             if available_cols:
                 df_display = df_metrics[available_cols].copy()
-                df_display.columns = ["Step", "Epoch", "Loss", "Learning Rate", "Tokens/sec", "Time (s)"][:len(available_cols)]
+                if grpo_step_entries:
+                    rename_map = {
+                        "step": "Step",
+                        "epoch": "Epoch",
+                        "policy_loss": "Policy Loss",
+                        "kl_loss": "KL Loss",
+                        "total_loss": "Total Loss",
+                        "mean_reward": "Mean Reward",
+                        "std_reward": "Reward Std",
+                        "learning_rate": "Learning Rate",
+                        "tokens_per_second": "Tokens/sec",
+                        "elapsed_time": "Time (s)",
+                    }
+                else:
+                    rename_map = {
+                        "step": "Step",
+                        "epoch": "Epoch",
+                        "loss": "Loss",
+                        "learning_rate": "Learning Rate",
+                        "tokens_per_second": "Tokens/sec",
+                        "elapsed_time": "Time (s)",
+                    }
+                df_display = df_display.rename(columns=rename_map)
                 
                 # Format numeric columns
                 if "Loss" in df_display.columns:
                     df_display["Loss"] = df_display["Loss"].apply(lambda x: f"{x:.4f}")
+                if "Policy Loss" in df_display.columns:
+                    df_display["Policy Loss"] = df_display["Policy Loss"].apply(lambda x: f"{x:.4f}")
+                if "KL Loss" in df_display.columns:
+                    df_display["KL Loss"] = df_display["KL Loss"].apply(lambda x: f"{x:.4f}")
+                if "Total Loss" in df_display.columns:
+                    df_display["Total Loss"] = df_display["Total Loss"].apply(lambda x: f"{x:.4f}")
+                if "Mean Reward" in df_display.columns:
+                    df_display["Mean Reward"] = df_display["Mean Reward"].apply(lambda x: f"{x:.4f}")
                 if "Learning Rate" in df_display.columns:
                     df_display["Learning Rate"] = df_display["Learning Rate"].apply(lambda x: f"{x:.2e}")
                 if "Time (s)" in df_display.columns:
@@ -2943,13 +3122,14 @@ def render_training_metrics_panel():
                 st.dataframe(df_display, width="stretch", hide_index=True)
             
             # Training summary
-            if train_end_info:
+            if train_end_info or grpo_end_info:
                 st.markdown("#### 🏁 Training Summary")
                 col1, col2, col3, col4 = st.columns(4)
+                summary_info = grpo_end_info if grpo_end_info else train_end_info
                 with col1:
-                    st.metric("Total Steps", train_end_info.get("total_steps", "N/A"))
+                    st.metric("Total Steps", summary_info.get("total_steps", "N/A"))
                 with col2:
-                    total_time = train_end_info.get("total_time", 0)
+                    total_time = summary_info.get("total_time", 0)
                     if total_time:
                         mins = int(total_time // 60)
                         secs = int(total_time % 60)
@@ -2957,14 +3137,22 @@ def render_training_metrics_panel():
                     else:
                         st.metric("Training Time", "N/A")
                 with col3:
-                    final_loss = train_end_info.get("final_loss")
-                    st.metric("Final Loss", f"{final_loss:.4f}" if final_loss else "N/A")
-                with col4:
-                    best_val = train_end_info.get("best_val_loss")
-                    if best_val and best_val != float("inf"):
-                        st.metric("Best Val Loss", f"{best_val:.4f}")
+                    if grpo_end_info:
+                        final_loss = summary_info.get("final_total_loss")
+                        st.metric("Final Total Loss", f"{final_loss:.4f}" if final_loss is not None else "N/A")
                     else:
-                        st.metric("Best Val Loss", "N/A")
+                        final_loss = summary_info.get("final_loss")
+                        st.metric("Final Loss", f"{final_loss:.4f}" if final_loss else "N/A")
+                with col4:
+                    if grpo_end_info:
+                        best_reward = summary_info.get("best_eval_reward")
+                        st.metric("Best Eval Reward", f"{best_reward:.4f}" if best_reward is not None else "N/A")
+                    else:
+                        best_val = summary_info.get("best_val_loss")
+                        if best_val and best_val != float("inf"):
+                            st.metric("Best Val Loss", f"{best_val:.4f}")
+                        else:
+                            st.metric("Best Val Loss", "N/A")
     
     # K-Fold Cross-Validation Results Section
     if is_kfold and (kfold_end_info or fold_entries):
@@ -2972,7 +3160,7 @@ def render_training_metrics_panel():
         st.markdown('<h3 class="section-header">🔄 K-Fold Cross-Validation Results</h3>', unsafe_allow_html=True)
         
         # Try to load kfold summary file
-        kfold_summary_path = PROJECT_ROOT / "outputs" / "kfold_summary.json"
+        kfold_summary_path = PROJECT_ROOT / "outputs" / ("grpo_kfold_summary.json" if is_grpo else "kfold_summary.json")
         kfold_summary = None
         if kfold_summary_path.exists():
             try:
@@ -2983,24 +3171,36 @@ def render_training_metrics_panel():
         
         # Display summary metrics
         if kfold_summary or kfold_end_info:
-            summary_data = kfold_summary or kfold_end_info
+            summary_data = kfold_summary or grpo_kfold_end_info or kfold_end_info
             
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 k = summary_data.get("k", len(fold_entries))
                 st.metric("Number of Folds", k)
             with col2:
-                avg_loss = summary_data.get("avg_final_loss", 0)
-                std_loss = summary_data.get("std_final_loss", 0)
-                st.metric("Avg Final Loss", f"{avg_loss:.4f} ± {std_loss:.4f}")
+                if is_grpo:
+                    avg_reward = summary_data.get("avg_best_reward", 0)
+                    std_reward = summary_data.get("std_best_reward", 0)
+                    st.metric("Avg Best Reward", f"{avg_reward:.4f} ± {std_reward:.4f}")
+                else:
+                    avg_loss = summary_data.get("avg_final_loss", 0)
+                    std_loss = summary_data.get("std_final_loss", 0)
+                    st.metric("Avg Final Loss", f"{avg_loss:.4f} ± {std_loss:.4f}")
             with col3:
-                avg_val = summary_data.get("avg_val_loss", 0)
-                std_val = summary_data.get("std_val_loss", 0)
-                st.metric("Avg Val Loss", f"{avg_val:.4f} ± {std_val:.4f}")
+                if is_grpo:
+                    total_time = summary_data.get("total_time", 0)
+                    mins = int(total_time // 60) if total_time else 0
+                    secs = int(total_time % 60) if total_time else 0
+                    st.metric("Total Time", f"{mins}m {secs}s" if total_time else "N/A")
+                else:
+                    avg_val = summary_data.get("avg_val_loss", 0)
+                    std_val = summary_data.get("std_val_loss", 0)
+                    st.metric("Avg Val Loss", f"{avg_val:.4f} ± {std_val:.4f}")
             with col4:
                 best_fold = summary_data.get("best_fold", 0)
-                best_val_loss = summary_data.get("best_val_loss", 0)
-                st.metric(f"⭐ Best Fold", f"Fold {best_fold + 1} ({best_val_loss:.4f})")
+                best_metric = summary_data.get("best_reward", summary_data.get("best_val_loss", 0))
+                label = "Best Reward" if is_grpo else "Best Val"
+                st.metric(f"⭐ Best Fold", f"Fold {best_fold + 1} ({label}: {best_metric:.4f})")
         
         # Fold-by-Fold Comparison Chart
         if kfold_summary and "fold_results" in kfold_summary:
@@ -3012,41 +3212,59 @@ def render_training_metrics_panel():
                 # Create comparison dataframe
                 fold_data = []
                 for result in fold_results:
-                    fold_data.append({
-                        "Fold": f"Fold {result['fold'] + 1}",
-                        "Final Loss": result.get("final_loss", 0),
-                        "Val Loss": result.get("best_val_loss", 0),
-                        "Train Samples": result.get("train_samples", 0),
-                        "Val Samples": result.get("val_samples", 0),
-                        "Training Time (s)": result.get("total_time", 0),
-                    })
+                    if is_grpo:
+                        fold_data.append({
+                            "Fold": f"Fold {result['fold'] + 1}",
+                            "Best Reward": result.get("best_eval_reward", 0),
+                            "Final Loss": result.get("final_total_loss", 0),
+                            "Train Samples": result.get("train_samples", 0),
+                            "Val Samples": result.get("val_samples", 0),
+                            "Training Time (s)": result.get("total_time", 0),
+                        })
+                    else:
+                        fold_data.append({
+                            "Fold": f"Fold {result['fold'] + 1}",
+                            "Final Loss": result.get("final_loss", 0),
+                            "Val Loss": result.get("best_val_loss", 0),
+                            "Train Samples": result.get("train_samples", 0),
+                            "Val Samples": result.get("val_samples", 0),
+                            "Training Time (s)": result.get("total_time", 0),
+                        })
                 
                 df_folds = pd.DataFrame(fold_data)
                 
                 # Display bar chart comparing folds
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.markdown("**Final Loss by Fold**")
-                    st.bar_chart(df_folds.set_index("Fold")["Final Loss"])
+                    metric_name = "Best Reward" if is_grpo else "Final Loss"
+                    st.markdown(f"**{metric_name} by Fold**")
+                    st.bar_chart(df_folds.set_index("Fold")[metric_name])
                 with col2:
-                    st.markdown("**Validation Loss by Fold**")
-                    st.bar_chart(df_folds.set_index("Fold")["Val Loss"])
+                    secondary_metric = "Final Loss" if is_grpo else "Val Loss"
+                    st.markdown(f"**{secondary_metric} by Fold**")
+                    st.bar_chart(df_folds.set_index("Fold")[secondary_metric])
                 
                 # Detailed table
                 st.markdown("**Detailed Fold Results**")
                 df_display = df_folds.copy()
                 df_display["Final Loss"] = df_display["Final Loss"].apply(lambda x: f"{x:.4f}")
-                df_display["Val Loss"] = df_display["Val Loss"].apply(lambda x: f"{x:.4f}")
+                if "Val Loss" in df_display.columns:
+                    df_display["Val Loss"] = df_display["Val Loss"].apply(lambda x: f"{x:.4f}")
+                if "Best Reward" in df_display.columns:
+                    df_display["Best Reward"] = df_display["Best Reward"].apply(lambda x: f"{x:.4f}")
                 df_display["Training Time (s)"] = df_display["Training Time (s)"].apply(lambda x: f"{x:.1f}")
                 st.dataframe(df_display, width="stretch", hide_index=True)
                 
                 # Best fold recommendation
                 best_fold_idx = kfold_summary.get("best_fold", 0)
+                best_value = kfold_summary.get("best_reward", kfold_summary.get("best_val_loss", 0))
+                descriptor = "highest reward" if is_grpo else "lowest validation loss"
+                target_checkpoint = "best" if not is_grpo else "final"
                 st.success(f"""
                 ⭐ **Recommended:** Use **Fold {best_fold_idx + 1}** adapters for deployment 
-                (lowest validation loss: {kfold_summary.get('best_val_loss', 0):.4f})
+                ({descriptor}: {best_value:.4f})
                 
-                📁 Checkpoint location: `outputs/fold_{best_fold_idx}/checkpoints/best/`
+                📁 Checkpoint location: `outputs/fold_{best_fold_idx}/checkpoints/{target_checkpoint}/`
                 """)
         
         # Total training time for k-fold
