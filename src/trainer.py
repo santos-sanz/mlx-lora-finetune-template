@@ -658,7 +658,7 @@ class KFoldTrainer:
         })
         
         print(f"\n{'='*50}")
-        print(f"K-FOLD TRAINING COMPLETE")
+        print("K-FOLD TRAINING COMPLETE")
         print(f"{'='*50}")
         print(f"Total time: {total_time:.2f}s")
         print(f"Average final loss: {avg_final_loss:.4f} ± {loss_std:.4f}")
