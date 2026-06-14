@@ -463,6 +463,7 @@ def preprocess_raw_text(
     chunk_overlap: int = 100,
     clean_timestamps: bool = True,
     clean_urls: bool = False,
+    clean_speaker_labels: bool = False,
     topic: str = "the content",
 ) -> List[Dict[str, str]]:
     """
@@ -475,6 +476,7 @@ def preprocess_raw_text(
         chunk_overlap: Overlap between chunks
         clean_timestamps: Remove timestamps
         clean_urls: Remove URLs
+        clean_speaker_labels: Remove speaker labels
         topic: Topic for knowledge format
     
     Returns:
@@ -485,6 +487,7 @@ def preprocess_raw_text(
         text,
         remove_timestamps=clean_timestamps,
         remove_urls=clean_urls,
+        remove_speaker_labels=clean_speaker_labels,
         normalize_whitespace=True,
     )
     
@@ -571,6 +574,7 @@ def process_folder(
     chunk_size: int = 1000,
     clean_timestamps: bool = True,
     clean_urls: bool = False,
+    clean_speaker_labels: bool = False,
     topic: str = "the content",
     progress_callback: callable = None,
 ) -> Tuple[Path, Path]:
@@ -586,6 +590,7 @@ def process_folder(
         chunk_size: Chunk size for splitting
         clean_timestamps: Remove timestamps
         clean_urls: Remove URLs
+        clean_speaker_labels: Remove speaker labels
         topic: Topic for knowledge format
         progress_callback: Optional callback(current, total, filename) for progress
     
@@ -623,6 +628,7 @@ def process_folder(
                 chunk_overlap=100,
                 clean_timestamps=clean_timestamps,
                 clean_urls=clean_urls,
+                clean_speaker_labels=clean_speaker_labels,
                 topic=topic,
             )
             all_examples.extend(examples)
@@ -844,6 +850,7 @@ def preprocess_with_llm(
     chunk_overlap: int = 100,
     clean_timestamps: bool = True,
     clean_urls: bool = False,
+    clean_speaker_labels: bool = False,
     questions_per_chunk: int = 2,
     progress_callback: callable = None,
 ) -> List[Dict[str, str]]:
@@ -859,6 +866,7 @@ def preprocess_with_llm(
         chunk_overlap: Overlap between chunks
         clean_timestamps: Remove timestamps
         clean_urls: Remove URLs
+        clean_speaker_labels: Remove speaker labels
         questions_per_chunk: Number of Q&A pairs per chunk (for qa format)
         progress_callback: Optional callback for progress
     
@@ -870,6 +878,7 @@ def preprocess_with_llm(
         text,
         remove_timestamps=clean_timestamps,
         remove_urls=clean_urls,
+        remove_speaker_labels=clean_speaker_labels,
         normalize_whitespace=True,
     )
     
@@ -1201,6 +1210,7 @@ def preprocess_with_openrouter(
     chunk_overlap: int = 100,
     clean_timestamps: bool = True,
     clean_urls: bool = False,
+    clean_speaker_labels: bool = False,
     questions_per_chunk: int = 2,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
@@ -1216,6 +1226,7 @@ def preprocess_with_openrouter(
         chunk_overlap: Overlap between chunks
         clean_timestamps: Remove timestamps
         clean_urls: Remove URLs
+        clean_speaker_labels: Remove speaker labels
         questions_per_chunk: Number of Q&A pairs per chunk (for qa format)
         api_key: Open Router API key
         model: Model to use
@@ -1229,6 +1240,7 @@ def preprocess_with_openrouter(
         text,
         remove_timestamps=clean_timestamps,
         remove_urls=clean_urls,
+        remove_speaker_labels=clean_speaker_labels,
         normalize_whitespace=True,
     )
     
@@ -1268,6 +1280,7 @@ def preprocess_with_agents(
     chunk_overlap: int = 200,
     clean_timestamps: bool = True,
     clean_urls: bool = False,
+    clean_speaker_labels: bool = False,
     questions_per_chunk: int = 2,
     api_key: Optional[str] = None,
     meta_model: Optional[str] = None,
@@ -1294,6 +1307,7 @@ def preprocess_with_agents(
         chunk_overlap: Overlap between chunks
         clean_timestamps: Remove timestamps
         clean_urls: Remove URLs
+        clean_speaker_labels: Remove speaker labels
         questions_per_chunk: Number of Q&A pairs per chunk
         api_key: OpenRouter API key
         meta_model: Model for Meta-Agent (smarter model recommended)
@@ -1312,6 +1326,7 @@ def preprocess_with_agents(
         text,
         remove_timestamps=clean_timestamps,
         remove_urls=clean_urls,
+        remove_speaker_labels=clean_speaker_labels,
         normalize_whitespace=True,
     )
     
@@ -1418,4 +1433,3 @@ def process_with_agents(
     print(f"Saved {len(val_data)} validation examples to {val_path}")
     
     return train_path, val_path, specialized_prompt
-

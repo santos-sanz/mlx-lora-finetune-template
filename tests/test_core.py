@@ -510,6 +510,19 @@ class TestPreprocessRawText:
         text = "Python was created by Guido van Rossum."
         examples = preprocess_raw_text(text, output_format="knowledge", topic="Python history")
         assert len(examples) >= 0
+
+    def test_remove_speaker_labels_option(self):
+        """Test speaker label removal through the raw preprocessing pipeline."""
+        text = "Speaker 1: This line should keep content but remove the label."
+        examples = preprocess_raw_text(
+            text,
+            output_format="raw",
+            clean_speaker_labels=True,
+        )
+
+        assert examples
+        assert "Speaker 1:" not in examples[0]["text"]
+        assert "This line should keep content" in examples[0]["text"]
     
     def test_raw_format(self):
         """Test raw output format."""
