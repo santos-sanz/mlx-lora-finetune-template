@@ -9,6 +9,7 @@ A powerful, user-friendly engine for fine-tuning LLM models using LoRA and MLX o
 ## ✨ Features
 
 - 🚀 **Fine-tuning with LoRA**: Efficient training using Low-Rank Adaptation
+- 🧠 **GRPO Reinforcement Learning**: Reward-driven post-training with rule-based rewards
 - 🍎 **MLX Optimized**: Leverages Apple Silicon hardware (M1/M2/M3) to the fullest
 - 🎨 **Streamlit UI**: Web interface with Simple/Advanced modes
 - 🤗 **Hugging Face Integration**: Download and upload models directly from/to the HF Hub
@@ -74,6 +75,19 @@ python scripts/train.py \
     --data data/processed
 ```
 
+#### 2b. Train with GRPO (RL)
+
+```bash
+# Prepare prompt/reference RL files
+python scripts/prepare_data.py \
+    --mode grpo \
+    --input data/raw/dataset.json \
+    --output data/processed
+
+# Run GRPO + KFold from config
+python scripts/train.py --config configs/current.yaml --training-method grpo_kfold
+```
+
 #### 3. Upload to Hugging Face
 
 ```bash
@@ -108,6 +122,7 @@ Enable to use Qwen3-0.6B for intelligent Q&A or summary generation.
 |------|-------------|
 | 🎯 Simple | Choose from presets: Quick Test, Balanced, High Quality, Maximum |
 | ⚙️ Advanced | Full control over LoRA rank, learning rate, epochs, etc. |
+| 🧠 GRPO | Reward-based RL mode with preflight validation, SFT warmup, and post-eval |
 
 ### HuggingFace Upload Page
 
@@ -204,6 +219,18 @@ Using models under 1B parameters is highly recommended for:
 ]
 ```
 
+### GRPO JSONL (Prompt-Reference)
+
+```json
+{"prompt": "Solve: 2+2", "reference": "4", "metadata": {"keywords": ["4"]}}
+{"prompt": "Return valid JSON with keys a,b", "reference": "{\"a\":1,\"b\":2}", "metadata": {"keywords": ["a", "b"]}}
+```
+
+Required fields for GRPO:
+- `prompt`: input shown to policy.
+- `reference`: target answer used by reward rules.
+- `metadata` (optional): extra context for rule-based rewards, e.g. `keywords`.
+
 ### Raw Text
 
 Any `.txt` or `.md` file. The system will:
@@ -215,6 +242,7 @@ Any `.txt` or `.md` file. The system will:
 
 - [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
 - [MLX: Machine Learning on Apple Silicon](https://ml-explore.github.io/mlx/)
+- [PPO: Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347)
 
 ## 🔗 Useful Links
 

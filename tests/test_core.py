@@ -15,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import config classes directly (no MLX dependency)
 from src.config import (
-    Config, LoRAConfig, TrainingConfig, ModelConfig, 
-    DataConfig, OutputConfig, HuggingFaceConfig
+    Config, LoRAConfig, TrainingConfig, GRPOConfig, RewardConfig, ModelConfig,
+    OutputConfig,
 )
 
 # Import data_utils functions directly
@@ -85,6 +85,36 @@ class TestTrainingConfig:
         assert "save_steps" in d
 
 
+class TestGRPOConfig:
+    """Tests for GRPOConfig class."""
+
+    def test_default_values(self):
+        config = GRPOConfig()
+        assert config.group_size >= 2
+        assert config.beta_kl >= 0.0
+
+    def test_to_dict(self):
+        config = GRPOConfig(group_size=6, beta_kl=0.05)
+        d = config.to_dict()
+        assert d["group_size"] == 6
+        assert d["beta_kl"] == 0.05
+
+
+class TestRewardConfig:
+    """Tests for RewardConfig class."""
+
+    def test_default_values(self):
+        config = RewardConfig()
+        assert config.function == "weighted_rules"
+        assert "exact_match" in config.weights
+
+    def test_to_dict(self):
+        config = RewardConfig(pass_threshold=0.7)
+        d = config.to_dict()
+        assert d["pass_threshold"] == 0.7
+        assert "weights" in d
+
+
 class TestModelConfig:
     """Tests for ModelConfig class."""
     
@@ -109,6 +139,8 @@ class TestConfig:
         config = Config()
         assert isinstance(config.lora, LoRAConfig)
         assert isinstance(config.training, TrainingConfig)
+        assert isinstance(config.grpo, GRPOConfig)
+        assert isinstance(config.reward, RewardConfig)
         assert isinstance(config.model, ModelConfig)
     
     def test_yaml_round_trip(self):
@@ -123,6 +155,18 @@ class TestConfig:
         
         assert loaded.lora.rank == 32
         assert loaded.training.learning_rate == 2e-5
+
+    def test_default_yaml_uses_qwen_prompt_tokens_for_qwen_model(self):
+        """The shipped Qwen default config should not inject Llama-only tokens."""
+        config = Config.from_yaml("configs/default.yaml")
+
+        if "qwen" not in config.model.name.lower():
+            pytest.skip("Default config no longer uses a Qwen-family model")
+
+        assert config.data.prompt_template is not None
+        assert "<|im_start|>" in config.data.prompt_template
+        assert "<|start_header_id|>" not in config.data.prompt_template
+        assert "<|begin_of_text|>" not in config.data.prompt_template
 
 
 class TestOutputConfig:
@@ -466,6 +510,19 @@ class TestPreprocessRawText:
         text = "Python was created by Guido van Rossum."
         examples = preprocess_raw_text(text, output_format="knowledge", topic="Python history")
         assert len(examples) >= 0
+
+    def test_remove_speaker_labels_option(self):
+        """Test speaker label removal through the raw preprocessing pipeline."""
+        text = "Speaker 1: This line should keep content but remove the label."
+        examples = preprocess_raw_text(
+            text,
+            output_format="raw",
+            clean_speaker_labels=True,
+        )
+
+        assert examples
+        assert "Speaker 1:" not in examples[0]["text"]
+        assert "This line should keep content" in examples[0]["text"]
     
     def test_raw_format(self):
         """Test raw output format."""

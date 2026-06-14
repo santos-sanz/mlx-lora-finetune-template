@@ -8,7 +8,15 @@ __version__ = "0.1.0"
 __author__ = "Santos Sanz"
 
 # Core modules (no MLX dependency)
-from .config import LoRAConfig, TrainingConfig, ModelConfig, HuggingFaceConfig, Config
+from .config import (
+    LoRAConfig,
+    TrainingConfig,
+    GRPOConfig,
+    RewardConfig,
+    ModelConfig,
+    HuggingFaceConfig,
+    Config,
+)
 from .data_utils import (
     load_dataset, prepare_training_data, create_train_val_split, 
     save_jsonl, create_kfold_splits, get_kfold_data
@@ -27,6 +35,9 @@ def __getattr__(name):
     elif name == "KFoldTrainer":
         from .trainer import KFoldTrainer
         return KFoldTrainer
+    elif name in ("GRPOTrainer", "GRPOKFoldTrainer"):
+        from .grpo_trainer import GRPOTrainer, GRPOKFoldTrainer
+        return {"GRPOTrainer": GRPOTrainer, "GRPOKFoldTrainer": GRPOKFoldTrainer}[name]
     elif name == "download_model":
         from .hf_utils import download_model
         return download_model
@@ -36,6 +47,8 @@ __all__ = [
     # Config
     "LoRAConfig",
     "TrainingConfig", 
+    "GRPOConfig",
+    "RewardConfig",
     "ModelConfig",
     "HuggingFaceConfig",
     "Config",
@@ -58,4 +71,6 @@ __all__ = [
     # Trainers (lazy)
     "LoRATrainer",
     "KFoldTrainer",
+    "GRPOTrainer",
+    "GRPOKFoldTrainer",
 ]

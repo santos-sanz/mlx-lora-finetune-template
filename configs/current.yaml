@@ -28,9 +28,37 @@ training:
   save_total_limit: 3
   logging_steps: 10
   eval_steps: 100
+grpo:
+  group_size: 4
+  clip_epsilon: 0.2
+  beta_kl: 0.02
+  advantage_epsilon: 1.0e-08
+  max_generation_tokens: 128
+  temperature: 0.8
+  top_p: 1.0
+  warmup_epochs: 1
+  preflight_sample_size: 128
+  min_reward_std: 1.0e-06
+  eval_steps: 50
+  logging_steps: 10
+reward:
+  function: weighted_rules
+  weights:
+    exact_match: 0.4
+    keyword_coverage: 0.3
+    json_format: 0.2
+    length_band: 0.1
+  pass_threshold: 0.6
+  metadata_keyword_field: keywords
+  min_response_length: 16
+  max_response_length: 512
+  require_nonzero_variance: true
 data:
   train_file: data/processed/train.jsonl
   valid_file: data/processed/valid.jsonl
+  rl_train_file: data/processed/rl_train.jsonl
+  rl_valid_file: data/processed/rl_valid.jsonl
+  rl_eval_file: data/processed/rl_eval.jsonl
   prompt_template: '<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
     {instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
