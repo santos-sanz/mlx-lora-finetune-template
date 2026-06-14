@@ -1566,6 +1566,7 @@ def page_data_preparation():
                                     chunk_size=chunk_size,
                                     clean_timestamps=clean_timestamps, 
                                     clean_urls=clean_urls,
+                                    clean_speaker_labels=clean_speakers,
                                     model=st.session_state.get('openrouter_model'),
                                 )
                             elif use_local_model:
@@ -1574,12 +1575,14 @@ def page_data_preparation():
                                     text, st.session_state.helper_model, st.session_state.helper_tokenizer,
                                     output_format=ai_format, chunk_size=chunk_size,
                                     clean_timestamps=clean_timestamps, clean_urls=clean_urls,
+                                    clean_speaker_labels=clean_speakers,
                                 )
                             else:
                                 examples = preprocess_raw_text(
                                     text, output_format=output_format, chunk_size=chunk_size,
                                     chunk_overlap=chunk_overlap, clean_timestamps=clean_timestamps,
-                                    clean_urls=clean_urls, topic=topic,
+                                    clean_urls=clean_urls, clean_speaker_labels=clean_speakers,
+                                    topic=topic,
                                 )
                             all_examples.extend(examples)
                     else:
@@ -1598,6 +1601,7 @@ def page_data_preparation():
                                 chunk_size=chunk_size,
                                 clean_timestamps=clean_timestamps, 
                                 clean_urls=clean_urls,
+                                clean_speaker_labels=clean_speakers,
                                 model=st.session_state.get('openrouter_model'),
                                 progress_callback=progress_cb,
                             )
@@ -1607,13 +1611,15 @@ def page_data_preparation():
                                 raw_text, st.session_state.helper_model, st.session_state.helper_tokenizer,
                                 output_format=ai_format, chunk_size=chunk_size,
                                 clean_timestamps=clean_timestamps, clean_urls=clean_urls,
+                                clean_speaker_labels=clean_speakers,
                                 progress_callback=progress_cb,
                             )
                         else:
                             all_examples = preprocess_raw_text(
                                 raw_text, output_format=output_format, chunk_size=chunk_size,
                                 chunk_overlap=chunk_overlap, clean_timestamps=clean_timestamps,
-                                clean_urls=clean_urls, topic=topic,
+                                clean_urls=clean_urls, clean_speaker_labels=clean_speakers,
+                                topic=topic,
                             )
                     
                     if not all_examples:
