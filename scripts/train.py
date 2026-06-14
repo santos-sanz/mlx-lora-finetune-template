@@ -23,6 +23,17 @@ from src.rl_data import load_rl_dataset, run_grpo_preflight, save_preflight_repo
 from src.trainer import KFoldTrainer, LoRATrainer
 
 
+def _positive_int(value: str) -> int:
+    """Parse a positive integer for CLI sample limits."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{value!r} is not an integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("value must be >= 1")
+    return parsed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train LoRA adapters with MLX (SFT/KFold/GRPO)")
     parser.add_argument("--config", type=str, default="configs/default.yaml", help="Path to config file")
@@ -39,7 +50,136 @@ def parse_args() -> argparse.Namespace:
         choices=["basic", "kfold", "grpo", "grpo_kfold"],
         help="Override training method",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate the resolved plan and dataset counts without loading the model or training",
+    )
+    parser.add_argument(
+        "--max-train-samples",
+        type=_positive_int,
+        help="Limit SFT or RL training samples for smoke runs",
+    )
+    parser.add_argument(
+        "--max-val-samples",
+        type=_positive_int,
+        help="Limit SFT or RL validation samples for smoke runs",
+    )
     return parser.parse_args()
+
+
+def _limit_samples(samples: List[Dict[str, Any]], max_samples: Optional[int], label: str) -> List[Dict[str, Any]]:
+    """Return a deterministic prefix of samples when a smoke-test limit is set."""
+    if max_samples is None:
+        return samples
+
+    limited = samples[:max_samples]
+    print(f"Using {len(limited)}/{len(samples)} {label} samples")
+    return limited
+
+
+def _dataset_plan(path: str, loaded_count: int, used_count: int, exists: bool = True) -> Dict[str, Any]:
+    return {
+        "path": path,
+        "exists": exists,
+        "loaded_samples": loaded_count,
+        "used_samples": used_count,
+    }
+
+
+def run_dry_run(
+    config: Config,
+    training_method: str,
+    *,
+    max_train_samples: Optional[int] = None,
+    max_val_samples: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Build a no-training execution plan from config and available data."""
+    plan: Dict[str, Any] = {
+        "dry_run": True,
+        "model": config.model.name,
+        "training_method": training_method,
+        "batch_size": config.training.batch_size,
+        "epochs": config.training.num_epochs,
+        "output_dir": config.output.dir,
+        "sample_limits": {
+            "max_train_samples": max_train_samples,
+            "max_val_samples": max_val_samples,
+        },
+        "datasets": {},
+    }
+
+    if training_method in {"basic", "kfold"}:
+        train_data = load_dataset(config.data.train_file)
+        train_used = _limit_samples(train_data, max_train_samples, "training")
+        plan["datasets"]["train"] = _dataset_plan(
+            config.data.train_file,
+            loaded_count=len(train_data),
+            used_count=len(train_used),
+        )
+
+        valid_file = Path(config.data.valid_file)
+        valid_used: List[Dict[str, Any]] = []
+        if valid_file.exists():
+            valid_data = load_dataset(valid_file)
+            valid_used = _limit_samples(valid_data, max_val_samples, "validation")
+            plan["datasets"]["valid"] = _dataset_plan(
+                config.data.valid_file,
+                loaded_count=len(valid_data),
+                used_count=len(valid_used),
+            )
+        else:
+            plan["datasets"]["valid"] = _dataset_plan(config.data.valid_file, 0, 0, exists=False)
+
+        if training_method == "kfold" and len(train_used) + len(valid_used) < config.data.kfold_splits:
+            raise ValueError(
+                f"K-Fold dry run needs at least {config.data.kfold_splits} samples after limits"
+            )
+
+        return plan
+
+    if training_method in {"grpo", "grpo_kfold"}:
+        rl_train = load_rl_dataset(config.data.rl_train_file)
+        rl_train_used = _limit_samples(rl_train, max_train_samples, "RL training")
+        plan["datasets"]["rl_train"] = _dataset_plan(
+            config.data.rl_train_file,
+            loaded_count=len(rl_train),
+            used_count=len(rl_train_used),
+        )
+
+        rl_valid_file = Path(config.data.rl_valid_file)
+        rl_valid_used: List[Dict[str, Any]] = []
+        if rl_valid_file.exists():
+            rl_valid = load_rl_dataset(rl_valid_file)
+            rl_valid_used = _limit_samples(rl_valid, max_val_samples, "RL validation")
+            plan["datasets"]["rl_valid"] = _dataset_plan(
+                config.data.rl_valid_file,
+                loaded_count=len(rl_valid),
+                used_count=len(rl_valid_used),
+            )
+        else:
+            plan["datasets"]["rl_valid"] = _dataset_plan(config.data.rl_valid_file, 0, 0, exists=False)
+
+        preflight_source = rl_train_used if training_method == "grpo" else rl_train_used + rl_valid_used
+        if training_method == "grpo_kfold" and len(preflight_source) < config.data.kfold_splits:
+            raise ValueError(
+                f"GRPO K-Fold dry run needs at least {config.data.kfold_splits} samples after limits"
+            )
+
+        _, preflight_report = run_grpo_preflight(
+            data=preflight_source,
+            reward_config=config.reward.to_dict(),
+            min_prompt_length=3,
+            min_reference_length=1,
+            sample_size=config.grpo.preflight_sample_size,
+            seed=config.data.kfold_seed,
+            require_nonzero_variance=config.reward.require_nonzero_variance,
+            min_reward_std=config.grpo.min_reward_std,
+        )
+        plan["grpo_preflight"] = preflight_report
+        return plan
+
+    raise ValueError(f"Unknown training method: {training_method}")
 
 
 def create_model_loader(config: Config):
@@ -105,10 +245,20 @@ def _run_post_eval(
         print(f"Warning: post-training evaluation failed ({exc})")
 
 
-def run_basic_or_kfold(config: Config, training_method: str) -> Dict[str, Any]:
+def run_basic_or_kfold(
+    config: Config,
+    training_method: str,
+    *,
+    max_train_samples: Optional[int] = None,
+    max_val_samples: Optional[int] = None,
+) -> Dict[str, Any]:
     """Run original SFT basic/kfold training methods."""
     print("\nLoading training data...")
-    train_data = load_dataset(config.data.train_file)
+    train_data = _limit_samples(
+        load_dataset(config.data.train_file),
+        max_train_samples,
+        "training",
+    )
     print(f"Loaded {len(train_data)} training examples")
 
     if training_method == "kfold":
@@ -121,7 +271,11 @@ def run_basic_or_kfold(config: Config, training_method: str) -> Dict[str, Any]:
 
         full_data = train_data
         if Path(config.data.valid_file).exists():
-            val_data = load_dataset(config.data.valid_file)
+            val_data = _limit_samples(
+                load_dataset(config.data.valid_file),
+                max_val_samples,
+                "validation",
+            )
             full_data = train_data + val_data
             print(f"Combined train + val data: {len(full_data)} total examples")
 
@@ -163,7 +317,11 @@ def run_basic_or_kfold(config: Config, training_method: str) -> Dict[str, Any]:
 
     val_data = None
     if Path(config.data.valid_file).exists():
-        val_data = load_dataset(config.data.valid_file)
+        val_data = _limit_samples(
+            load_dataset(config.data.valid_file),
+            max_val_samples,
+            "validation",
+        )
         print(f"Loaded {len(val_data)} validation examples")
 
     trainer = LoRATrainer(
@@ -192,10 +350,28 @@ def run_basic_or_kfold(config: Config, training_method: str) -> Dict[str, Any]:
     return trainer.train()
 
 
-def run_grpo(config: Config, config_path: str) -> Dict[str, Any]:
+def run_grpo(
+    config: Config,
+    config_path: str,
+    *,
+    max_train_samples: Optional[int] = None,
+    max_val_samples: Optional[int] = None,
+) -> Dict[str, Any]:
     """Run GRPO single-run training with mandatory preflight + warmup + post-eval."""
-    rl_train = load_rl_dataset(config.data.rl_train_file)
-    rl_valid = load_rl_dataset(config.data.rl_valid_file) if Path(config.data.rl_valid_file).exists() else []
+    rl_train = _limit_samples(
+        load_rl_dataset(config.data.rl_train_file),
+        max_train_samples,
+        "RL training",
+    )
+    rl_valid = (
+        _limit_samples(
+            load_rl_dataset(config.data.rl_valid_file),
+            max_val_samples,
+            "RL validation",
+        )
+        if Path(config.data.rl_valid_file).exists()
+        else []
+    )
 
     preflight_data, preflight_report = run_grpo_preflight(
         data=rl_train,
@@ -305,10 +481,28 @@ def run_grpo(config: Config, config_path: str) -> Dict[str, Any]:
     return stats
 
 
-def run_grpo_kfold(config: Config, config_path: str) -> Dict[str, Any]:
+def run_grpo_kfold(
+    config: Config,
+    config_path: str,
+    *,
+    max_train_samples: Optional[int] = None,
+    max_val_samples: Optional[int] = None,
+) -> Dict[str, Any]:
     """Run GRPO K-Fold training with warmup per fold and automatic post-eval."""
-    rl_train = load_rl_dataset(config.data.rl_train_file)
-    rl_valid = load_rl_dataset(config.data.rl_valid_file) if Path(config.data.rl_valid_file).exists() else []
+    rl_train = _limit_samples(
+        load_rl_dataset(config.data.rl_train_file),
+        max_train_samples,
+        "RL training",
+    )
+    rl_valid = (
+        _limit_samples(
+            load_rl_dataset(config.data.rl_valid_file),
+            max_val_samples,
+            "RL validation",
+        )
+        if Path(config.data.rl_valid_file).exists()
+        else []
+    )
     full_data = rl_train + rl_valid
 
     normalized_data, preflight_report = run_grpo_preflight(
@@ -420,14 +614,40 @@ def main() -> None:
     print(f"Training method: {training_method}")
     print("=" * 70)
 
+    if args.dry_run:
+        stats = run_dry_run(
+            config,
+            training_method,
+            max_train_samples=args.max_train_samples,
+            max_val_samples=args.max_val_samples,
+        )
+        print(json.dumps(stats, indent=2))
+        print("Dry run complete. No model was loaded and no training was started.")
+        return
+
     config.output.ensure_dirs()
 
     if training_method in {"basic", "kfold"}:
-        stats = run_basic_or_kfold(config, training_method)
+        stats = run_basic_or_kfold(
+            config,
+            training_method,
+            max_train_samples=args.max_train_samples,
+            max_val_samples=args.max_val_samples,
+        )
     elif training_method == "grpo":
-        stats = run_grpo(config, args.config)
+        stats = run_grpo(
+            config,
+            args.config,
+            max_train_samples=args.max_train_samples,
+            max_val_samples=args.max_val_samples,
+        )
     elif training_method == "grpo_kfold":
-        stats = run_grpo_kfold(config, args.config)
+        stats = run_grpo_kfold(
+            config,
+            args.config,
+            max_train_samples=args.max_train_samples,
+            max_val_samples=args.max_val_samples,
+        )
     else:
         raise ValueError(f"Unknown training method: {training_method}")
 
