@@ -8,8 +8,8 @@ from mlx_lm import load
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from src.config import Config
-from src.model_utils import apply_lora
+from src.config import Config  # noqa: E402
+from src.model_utils import apply_lora  # noqa: E402
 
 def debug_adapters():
     # Load config
@@ -80,7 +80,6 @@ def debug_adapters():
     
     print("Comparing keys...")
     missing_in_model = adapter_keys - model_keys
-    missing_in_adapters = model_keys - adapter_keys # This will be huge, just check if valid ones are there
     
     if missing_in_model:
         print(f"CRITICAL: {len(missing_in_model)} keys from adapters are NOT in the model!")

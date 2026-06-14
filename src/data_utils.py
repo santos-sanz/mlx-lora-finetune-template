@@ -3,9 +3,13 @@ Data utilities for preparing training and validation datasets.
 """
 
 import json
+import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Union
 import random
+import re
+from typing import List, Dict, Any, Optional, Tuple, Union
+
+import requests
 
 
 def load_dataset(path: Union[str, Path], format: str = "auto") -> List[Dict[str, Any]]:
@@ -203,9 +207,6 @@ def convert_to_mlx_format(
 # Text Preprocessing Utilities for Raw Content (Transcripts, Books, etc.)
 # ============================================================================
 
-import re
-
-
 def load_raw_text(path: Union[str, Path]) -> str:
     """Load raw text from file (.txt, .md, etc.)."""
     path = Path(path)
@@ -254,7 +255,7 @@ def clean_text(
     # Filter short lines
     if min_line_length > 0:
         lines = text.split('\n')
-        lines = [l for l in lines if len(l.strip()) >= min_line_length]
+        lines = [line for line in lines if len(line.strip()) >= min_line_length]
         text = '\n'.join(lines)
     
     # Normalize whitespace
@@ -394,14 +395,6 @@ def create_qa_examples(
         List of training examples
     """
     examples = []
-    
-    # Question templates
-    question_templates = [
-        ("What is the main topic discussed in this text?", "summary"),
-        ("What are the key points mentioned?", "keypoints"),
-        ("Explain the following concept based on the text:", "explain"),
-        ("Summarize the information about:", "summarize"),
-    ]
     
     for chunk in chunks:
         if len(chunk) < 100:
@@ -904,9 +897,6 @@ def preprocess_with_llm(
 # ============================================================================
 # Open Router API for Faster Data Generation
 # ============================================================================
-
-import os
-import requests
 
 def get_openrouter_config() -> Dict[str, str]:
     """

@@ -3,7 +3,7 @@ PYTHON = $(VENV)/bin/python
 PIP = $(VENV)/bin/pip
 STREAMLIT = $(VENV)/bin/streamlit
 
-.PHONY: setup setup-uv train train-current prepare-data run debug-ui upload clean-logs clean
+.PHONY: setup setup-uv train train-current prepare-data run debug-ui upload lint clean-logs clean
 
 run:
 	$(STREAMLIT) run app.py
@@ -34,6 +34,9 @@ train-current:
 
 upload:
 	$(PYTHON) scripts/upload_to_hf.py --model outputs/checkpoints/final
+
+lint:
+	ruff check .
 
 clean-logs:
 	rm -rf outputs/logs/*

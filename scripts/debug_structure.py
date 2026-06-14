@@ -1,6 +1,4 @@
 
-import mlx.core as mx
-import mlx.nn as nn
 from mlx_lm import load
 from mlx_lm.tuner.utils import linear_to_lora_layers
 

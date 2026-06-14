@@ -74,7 +74,7 @@ def main():
             repo_id=repo_id,
             private=private,
         )
-        print(f"\nModel uploaded successfully!")
+        print("\nModel uploaded successfully!")
         print(f"URL: {url}")
     
     elif args.checkpoint:
@@ -87,7 +87,7 @@ def main():
             repo_id=repo_id,
             private=private,
         )
-        print(f"\nCheckpoint uploaded successfully!")
+        print("\nCheckpoint uploaded successfully!")
     
     else:
         print("Error: Specify --model or --checkpoint to upload")

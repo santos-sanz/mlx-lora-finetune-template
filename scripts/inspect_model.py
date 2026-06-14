@@ -1,4 +1,3 @@
-import mlx.core as mx
 import mlx.nn as nn
 from mlx_lm import load
 

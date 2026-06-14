@@ -100,7 +100,6 @@ def upload_model(
         URL of the uploaded model
     """
     token = token or get_hf_token()
-    api = HfApi(token=token)
     
     # Create repo if it doesn't exist
     try:
@@ -109,7 +108,7 @@ def upload_model(
         print(f"Note: {e}")
     
     # Upload folder
-    url = upload_folder(
+    upload_folder(
         folder_path=str(model_path),
         repo_id=repo_id,
         token=token,

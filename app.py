@@ -6,21 +6,18 @@ A modern interface for fine-tuning LLM models using LoRA and MLX on Apple Silico
 """
 
 import streamlit as st
-import sys
 from pathlib import Path
 import json
 import time
 
-# Add project root to path
-PROJECT_ROOT = Path(__file__).parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
-from src.config import Config, LoRAConfig, TrainingConfig, ModelConfig, DataConfig, OutputConfig, HuggingFaceConfig
+from src.config import Config
 from src.data_utils import load_dataset, convert_to_mlx_format, generate_with_openrouter, is_openrouter_configured, get_openrouter_config
 from src.hf_utils import get_hf_token, upload_model, upload_checkpoint, list_checkpoints, check_repo_exists
 from src.ui.inputs import file_picker, folder_picker
 from src.ui.session_state import init_session_state
-from src.ui.status import get_status_badge, count_files
+from src.ui.status import count_files
+
+PROJECT_ROOT = Path(__file__).parent
 
 
 # ============================================================================
@@ -1210,11 +1207,8 @@ def page_data_preparation():
     # Import additional functions for processing
     from src.data_utils import (
         preprocess_raw_text, 
-        clean_text, 
-        chunk_text,
         create_train_val_split,
         save_jsonl,
-        process_folder,
         load_helper_model,
         preprocess_with_llm,
         # Open Router functions
@@ -1702,11 +1696,16 @@ def page_data_preparation():
                 q_comparison = st.checkbox("⚖️ Comparisons / Trade-offs", value=False, help="Comparing approaches and their trade-offs")
                 
                 question_types = []
-                if q_practical: question_types.append("Practical/How-to")
-                if q_strategic: question_types.append("Strategic/Decision-making")
-                if q_application: question_types.append("Application/Implementation")
-                if q_mistakes: question_types.append("Mistakes/What to avoid")
-                if q_comparison: question_types.append("Comparisons/Trade-offs")
+                if q_practical:
+                    question_types.append("Practical/How-to")
+                if q_strategic:
+                    question_types.append("Strategic/Decision-making")
+                if q_application:
+                    question_types.append("Application/Implementation")
+                if q_mistakes:
+                    question_types.append("Mistakes/What to avoid")
+                if q_comparison:
+                    question_types.append("Comparisons/Trade-offs")
             
             st.markdown("---")
             st.markdown('<h3 class="section-header">📄 Source Content</h3>', unsafe_allow_html=True)
@@ -1827,7 +1826,6 @@ def page_data_preparation():
             if st.button("🚀 Generate High-Quality Dataset", type="primary", width="stretch", disabled=not can_generate):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
-                prompt_display = st.empty()
                 
                 try:
                     def progress_cb(current, total):
@@ -1917,7 +1915,7 @@ def page_data_preparation():
                         try:
                             data = load_dataset(f)
                             st.info(f"📄 `{f.name}`: **{len(data)}** examples")
-                        except:
+                        except Exception:
                             st.warning(f"Could not read {f.name}")
                 else:
                     st.warning("No JSONL files found")
@@ -2024,12 +2022,10 @@ def render_simple_mode(config):
     
     cols = st.columns(len(TRAINING_PRESETS))
     
-    selected_preset = None
     for i, (preset_name, preset_config) in enumerate(TRAINING_PRESETS.items()):
         with cols[i]:
             # Create a card-like button
             if st.button(preset_name, key=f"preset_{i}", width="stretch"):
-                selected_preset = preset_name
                 # Apply preset
                 config.lora.rank = preset_config["lora_rank"]
                 config.lora.alpha = preset_config["lora_alpha"]
@@ -2075,13 +2071,11 @@ def render_simple_mode(config):
     st.markdown('<h2 class="section-header">3️⃣ Training Data</h2>', unsafe_allow_html=True)
     
     train_exists = Path(config.data.train_file).exists()
-    valid_exists = Path(config.data.valid_file).exists()
-    
     if train_exists:
         try:
             train_data = load_dataset(config.data.train_file)
             st.success(f"✅ Training data ready: **{len(train_data)} examples** from `{config.data.train_file}`")
-        except:
+        except Exception:
             st.warning("⚠️ Could not load training data")
     else:
         st.warning("⚠️ No training data found. Go to **Prepare Data** page first.")
@@ -2542,7 +2536,7 @@ def get_available_checkpoints():
         if name.startswith("step-"):
             try:
                 return (1, int(name.split("-")[1]))
-            except:
+            except Exception:
                 return (1, 0)
         elif name == "best":
             return (0, 0)
@@ -2808,7 +2802,6 @@ def render_training_metrics_panel():
     grpo_eval_entries = []
     
     # K-Fold specific entries
-    kfold_start_info = None
     kfold_end_info = None
     grpo_kfold_end_info = None
     fold_entries = []  # List of {fold, start, end} dicts
@@ -2847,7 +2840,6 @@ def render_training_metrics_panel():
                             grpo_eval_entries.append(entry)
                             is_grpo = True
                         elif entry_type == "kfold_start":
-                            kfold_start_info = entry
                             is_kfold = True
                         elif entry_type == "kfold_end":
                             kfold_end_info = entry
@@ -3060,7 +3052,7 @@ def render_training_metrics_panel():
                 try:
                     step_num = int(cp.split("-")[1])
                     steps.append({"Checkpoint": cp, "Step": step_num})
-                except:
+                except Exception:
                     pass
             if steps:
                 df = pd.DataFrame(steps)
@@ -3206,7 +3198,7 @@ def render_training_metrics_panel():
                 best_fold = summary_data.get("best_fold", 0)
                 best_metric = summary_data.get("best_reward", summary_data.get("best_val_loss", 0))
                 label = "Best Reward" if is_grpo else "Best Val"
-                st.metric(f"⭐ Best Fold", f"Fold {best_fold + 1} ({label}: {best_metric:.4f})")
+                st.metric("⭐ Best Fold", f"Fold {best_fold + 1} ({label}: {best_metric:.4f})")
         
         # Fold-by-Fold Comparison Chart
         if kfold_summary and "fold_results" in kfold_summary:
@@ -3991,14 +3983,14 @@ Make it engaging and informative for users discovering this model."""
                         st.info(f"⚙️ Added config files: {', '.join(configs_added)}")
                     
                     if upload_type == "Final Model":
-                        url = upload_model(
+                        upload_model(
                             model_path=str(path_to_upload),
                             repo_id=repo_id,
                             token=hf_token,
                             private=private,
                         )
                     else:
-                        url = upload_checkpoint(
+                        upload_checkpoint(
                             checkpoint_path=str(path_to_upload),
                             repo_id=repo_id,
                             token=hf_token,

@@ -122,7 +122,7 @@ Output ONLY the prompt, nothing else. Format it as instructions that could be gi
         try:
             specialized_prompt = self._call_api(meta_prompt)
             return specialized_prompt
-        except Exception as e:
+        except Exception:
             # Fallback to a good default prompt if API fails
             return self._get_fallback_prompt(intention, personality, question_types_str)
     
@@ -216,7 +216,7 @@ Summary:"""
         
         try:
             return self._call_api(analysis_prompt, max_tokens=150)
-        except:
+        except Exception:
             # Fallback: extract first meaningful paragraph
             paragraphs = [p.strip() for p in text.split('\n\n') if len(p.strip()) > 50]
             if paragraphs:
