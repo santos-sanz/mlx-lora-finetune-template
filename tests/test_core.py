@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import config classes directly (no MLX dependency)
 from src.config import (
     Config, LoRAConfig, TrainingConfig, GRPOConfig, RewardConfig, ModelConfig,
-    DataConfig, OutputConfig, HuggingFaceConfig
+    OutputConfig,
 )
 
 # Import data_utils functions directly
@@ -155,6 +155,18 @@ class TestConfig:
         
         assert loaded.lora.rank == 32
         assert loaded.training.learning_rate == 2e-5
+
+    def test_default_yaml_uses_qwen_prompt_tokens_for_qwen_model(self):
+        """The shipped Qwen default config should not inject Llama-only tokens."""
+        config = Config.from_yaml("configs/default.yaml")
+
+        if "qwen" not in config.model.name.lower():
+            pytest.skip("Default config no longer uses a Qwen-family model")
+
+        assert config.data.prompt_template is not None
+        assert "<|im_start|>" in config.data.prompt_template
+        assert "<|start_header_id|>" not in config.data.prompt_template
+        assert "<|begin_of_text|>" not in config.data.prompt_template
 
 
 class TestOutputConfig:
