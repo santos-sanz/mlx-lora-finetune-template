@@ -46,6 +46,8 @@ def init_session_state(project_root: Path) -> None:
         "selected_checkpoint": None,
         "test_models_loaded": False,
         "config_load_error": None,
+        "page": "home",
+        "saved_config_signature": None,
     }
 
     for key, value in defaults.items():
